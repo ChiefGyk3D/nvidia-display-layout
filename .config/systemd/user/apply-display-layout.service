@@ -1,0 +1,10 @@
+[Unit]
+Description=Apply NVIDIA display layout after login
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/chiefgyk3d/.screenlayout/apply-layout.sh
+
+[Install]
+WantedBy=default.target
