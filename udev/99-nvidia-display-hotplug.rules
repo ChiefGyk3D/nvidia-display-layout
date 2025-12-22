@@ -1,0 +1,12 @@
+# NVIDIA Display Hotplug udev Rules
+# Install to: /etc/udev/rules.d/99-nvidia-display-hotplug.rules
+#
+# These rules trigger the layout script when displays are connected/disconnected.
+# 
+# IMPORTANT: You must customize the USERNAME below!
+
+# Generic DRM hotplug event (works for most NVIDIA setups)
+ACTION=="change", SUBSYSTEM=="drm", ENV{HOTPLUG}=="1", RUN+="/usr/bin/su USERNAME -c '/home/USERNAME/.screenlayout/hotplug-handler.sh'"
+
+# Alternative: Trigger on any DRM card change
+# ACTION=="change", SUBSYSTEM=="drm", KERNEL=="card0", RUN+="/usr/bin/su USERNAME -c '/home/USERNAME/.screenlayout/hotplug-handler.sh'"

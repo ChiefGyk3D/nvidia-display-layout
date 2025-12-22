@@ -43,12 +43,14 @@ After running the wizard, files are installed to:
 $HOME/
 ├── .screenlayout/
 │   ├── apply-layout.sh      # Smart selector script
+│   ├── display-monitor.sh   # Hotplug monitor daemon
 │   ├── nvidia-base.sh       # Base layout (auto-generated)
 │   ├── nvidia-capture.sh    # Layout with HDMI capture (if configured)
 │   └── .layout-config       # Saved configuration
 │
 └── .config/systemd/user/
-    └── apply-display-layout.service
+    ├── apply-display-layout.service   # Runs once at login
+    └── nvidia-display-monitor.service # Continuous hotplug monitor
 ```
 
 ## Manual Installation
@@ -89,6 +91,34 @@ Bind this command in your desktop settings (e.g., **Pop!_OS → Keyboard → Cus
 - `Super + F12`
 - `Ctrl + Alt + D`
 
+### 5. (Optional) Enable Hotplug/Auto-Detection
+
+For automatic layout application when displays are connected/disconnected:
+
+```bash
+./install-hotplug.sh
+```
+
+You'll be prompted to choose:
+
+| Option | Description | Reliability |
+|--------|-------------|-------------|
+| **Display Monitor (recommended)** | Polls every 3 seconds for changes | ✅ Works with NVIDIA |
+| udev Rules | Kernel-triggered events | ❌ Often fails with NVIDIA |
+
+The display monitor runs as a lightweight user service and reliably detects hotplug.
+
+## Services
+
+This project uses two systemd services that work together:
+
+| Service | Purpose | Runs |
+|---------|---------|------|
+| `apply-display-layout.service` | Apply layout at login | Once at login |
+| `nvidia-display-monitor.service` | Detect hotplug changes | Continuously |
+
+**They don't conflict** - both are safe to have enabled. The login service ensures your layout is correct immediately at login, while the monitor handles any changes during your session.
+
 ## Scripts
 
 ### 🟢 nvidia-base.sh
@@ -113,12 +143,42 @@ Interactive configuration wizard. Run this to:
 - Set up HDMI capture card mirroring
 - Generate all scripts automatically
 
+### 📊 display-status.sh
+
+Quick status checker and action menu:
+- View connected displays
+- Check current MetaMode
+- View service status
+- Apply layout or restart services
+- Launch wizard for reconfiguration
+
 ## Usage
 
 1. Plug/unplug HDMI capture card
-2. Press your hotkey to apply the correct layout
+2. If using the display monitor, layout applies automatically
+3. Or press your hotkey to apply manually
 
 The layout is also automatically applied on login via the systemd service.
+
+## Replacing or Adding Monitors
+
+When you change your monitor setup:
+
+```bash
+# Option 1: Run the full wizard
+./setup-wizard.sh
+
+# Option 2: Quick status check and reconfigure
+./display-status.sh
+```
+
+The wizard will:
+1. Detect your new displays automatically
+2. Let you configure each one
+3. Regenerate all scripts
+4. Restart services with new configuration
+
+**Your old configuration is preserved** in `~/.screenlayout/.layout-config` until you run the wizard again.
 
 ## Verification
 
@@ -145,11 +205,11 @@ nvidia-settings -q dpys
 |-----------|-------------|
 | **No xrandr** | NVIDIA MetaModes only |
 | **No GNOME Displays** | Avoids config conflicts |
-| **No udev hotplug** | No race conditions |
 | **No timers** | Deterministic execution |
 | **Only NVIDIA MetaModes** | Native driver control |
 | **Deterministic** | Same result every time |
 | **Manual toggle + auto-apply** | User-controlled with login automation |
+| **Optional hotplug** | Available but with intentional delays |
 
 ## What is Intentionally NOT Included
 
@@ -158,9 +218,7 @@ nvidia-settings -q dpys
 | ❌ xrandr | Conflicts with NVIDIA MetaModes |
 | ❌ GNOME Displays | Creates inconsistent state |
 | ❌ NVIDIA "Save X Config" | Overwrites with RandR settings |
-| ❌ udev rules | Race conditions with display init |
 | ❌ systemd timers | Unnecessary polling |
-| ❌ Auto-hotplug hacks | Unreliable detection |
 | ❌ ViewPortIn / ViewPortOut | Not needed for this layout |
 | ❌ Panning | Causes display artifacts |
 
@@ -214,6 +272,26 @@ Something is overwriting NVIDIA settings. Check for:
 ### Wrong display detected as HDMI
 
 Update the grep pattern in `apply-layout.sh` to match your capture card's identifier.
+
+### Hotplug not working
+
+1. Check the log file:
+   ```bash
+   cat /tmp/nvidia-hotplug.log
+   ```
+
+2. Verify udev rule is installed:
+   ```bash
+   cat /etc/udev/rules.d/99-nvidia-display-hotplug.rules
+   ```
+
+3. Test udev is triggering:
+   ```bash
+   udevadm monitor --property
+   # Then plug/unplug a display
+   ```
+
+4. If still not working, use the keyboard shortcut instead (more reliable).
 
 ### Reconfiguring after hardware changes
 

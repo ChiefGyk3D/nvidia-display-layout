@@ -1,0 +1,12 @@
+[Unit]
+Description=NVIDIA Display Monitor - Auto-apply layout on display changes
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.screenlayout/display-monitor.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
