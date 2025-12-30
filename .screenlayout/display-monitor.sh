@@ -123,12 +123,25 @@ main() {
             log "Display change detected! Old: $LAST_STATE New: $CURRENT_STATE"
             echo "$(date): Display change detected, applying layout..."
             
-            # Small delay for hardware to stabilize
-            sleep 1
+            # Wait for HDMI handshake to complete (capture cards can be slow)
+            log "Waiting for display handshake..."
+            sleep 3
             
+            # Apply layout, then re-check and re-apply if state changed during handshake
             if [ -x "$SCREENLAYOUT_DIR/apply-layout.sh" ]; then
                 "$SCREENLAYOUT_DIR/apply-layout.sh" >> "$LOGFILE" 2>&1
-                log "Layout applied"
+                log "Layout applied (first pass)"
+                
+                # Wait and check if HDMI became ready after initial apply
+                sleep 2
+                local post_state=$(get_display_state)
+                if [ "$post_state" != "$CURRENT_STATE" ]; then
+                    log "State changed during handshake, re-applying..."
+                    sleep 1
+                    "$SCREENLAYOUT_DIR/apply-layout.sh" >> "$LOGFILE" 2>&1
+                    log "Layout applied (second pass)"
+                    CURRENT_STATE="$post_state"
+                fi
             fi
             
             LAST_STATE="$CURRENT_STATE"
