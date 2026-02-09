@@ -4,7 +4,9 @@ After=graphical-session.target
 
 [Service]
 Type=oneshot
-ExecStart=/home/chiefgyk3d/.screenlayout/apply-layout.sh
+ExecStart=%h/.screenlayout/apply-layout.sh
+# Delay slightly to ensure X session is fully ready
+ExecStartPre=/bin/sleep 2
 
 [Install]
 WantedBy=default.target

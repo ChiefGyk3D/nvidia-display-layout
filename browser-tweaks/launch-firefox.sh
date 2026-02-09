@@ -1,8 +1,8 @@
 #!/bin/bash
-# Floorp launcher with NVIDIA optimizations
-# These env vars also work for Firefox — see launch-firefox.sh
+# Firefox launcher with NVIDIA optimizations
+# Same env vars as launch-floorp.sh — they share the same engine
 # Works with: https://github.com/ChiefGyk3D/nvidia-capture-card
-# Run this instead of the regular Floorp launcher for best performance
+# Run this instead of the regular Firefox launcher for best performance
 
 # === NVIDIA + X11 Environment Variables ===
 # Force EGL backend (better than GLX for modern NVIDIA)
@@ -31,5 +31,5 @@ if [ -x "$HOME/.screenlayout/apply-layout.sh" ]; then
     "$HOME/.screenlayout/apply-layout.sh" &>/dev/null &
 fi
 
-# Launch Floorp (Flatpak version)
-flatpak run one.ablaze.floorp "$@"
+# Launch Firefox (Flatpak version)
+flatpak run org.mozilla.firefox "$@"

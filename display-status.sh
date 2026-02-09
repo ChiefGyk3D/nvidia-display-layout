@@ -62,7 +62,7 @@ echo -e "${YELLOW}═══ Configuration ═══${NC}"
 echo ""
 if [ -f "$HOME/.screenlayout/.layout-config" ]; then
     echo "Saved configuration found:"
-    grep -E "^DISPLAY_[0-9]+_(ID|RES|POS|ROT)=" "$HOME/.screenlayout/.layout-config" | while read -r line; do
+    grep -E "^DISPLAY_[0-9]+_(ID|RES|REFRESH|POS|ROT|FFCP)=" "$HOME/.screenlayout/.layout-config" | while read -r line; do
         echo "  $line"
     done
 else

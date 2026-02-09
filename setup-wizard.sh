@@ -21,9 +21,11 @@ SERVICE_NAME="apply-display-layout.service"
 declare -a DISPLAY_IDS
 declare -a DISPLAY_NAMES
 declare -a DISPLAY_RESOLUTIONS
+declare -a DISPLAY_REFRESH_RATES
 declare -a DISPLAY_POSITIONS
 declare -a DISPLAY_ROTATIONS
 declare -a DISPLAY_OFFSETS
+declare -a DISPLAY_COMPOSITION_PIPELINE
 
 # Capture card config
 CAPTURE_ENABLED=false
@@ -115,6 +117,97 @@ get_resolutions() {
     echo "custom"
 }
 
+# Detect available refresh rates for a display at a given resolution
+detect_refresh_rates() {
+    local dpy="$1"
+    local resolution="$2"
+    local rates=()
+    
+    # Query nvidia-settings for available modes
+    local mode_output
+    mode_output=$(nvidia-settings -q "${dpy}/Modes" 2>/dev/null || true)
+    
+    # Parse refresh rates for the given resolution
+    if [ -n "$mode_output" ]; then
+        while IFS= read -r line; do
+            if [[ "$line" =~ ${resolution}.*@[[:space:]]*([0-9]+\.?[0-9]*)Hz ]]; then
+                local rate="${BASH_REMATCH[1]}"
+                # Remove decimal if .0
+                rate=$(echo "$rate" | sed 's/\.0$//')
+                rates+=("$rate")
+            fi
+        done <<< "$mode_output"
+    fi
+    
+    # Also try xrandr as a fallback for mode detection
+    if [ ${#rates[@]} -eq 0 ] && command -v xrandr &>/dev/null; then
+        local xrandr_output
+        xrandr_output=$(xrandr 2>/dev/null || true)
+        
+        # Find the output name associated with this DPY
+        # nvidia-settings DPY names map to xrandr outputs
+        local in_display=false
+        local found_res=false
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^[A-Z] ]] && [[ "$line" =~ " connected" ]]; then
+                in_display=true
+                found_res=false
+            elif [[ "$line" =~ ^[A-Z] ]]; then
+                in_display=false
+                found_res=false
+            elif [ "$in_display" = true ]; then
+                if [[ "$line" =~ ^[[:space:]]+${resolution}[[:space:]]+(.*) ]]; then
+                    found_res=true
+                    local rate_string="${BASH_REMATCH[1]}"
+                    # Extract all refresh rates from the line
+                    while [[ "$rate_string" =~ ([0-9]+\.[0-9]+) ]]; do
+                        local r="${BASH_REMATCH[1]}"
+                        r=$(echo "$r" | sed 's/\.00$//')
+                        r=$(echo "$r" | sed 's/\.0$//')
+                        # Round to integer for common rates
+                        local r_int=$(printf "%.0f" "$r")
+                        rates+=("$r_int")
+                        rate_string="${rate_string#*${BASH_REMATCH[1]}}"
+                    done
+                fi
+            fi
+        done <<< "$xrandr_output"
+    fi
+    
+    # Deduplicate and sort descending
+    if [ ${#rates[@]} -gt 0 ]; then
+        printf '%s\n' "${rates[@]}" | sort -rn -u
+    fi
+}
+
+# Detect the current/preferred refresh rate for a display
+detect_current_refresh_rate() {
+    local dpy="$1"
+    
+    # Try nvidia-settings first
+    local refresh
+    refresh=$(nvidia-settings -t -q "${dpy}/RefreshRate" 2>/dev/null | head -1)
+    if [ -n "$refresh" ]; then
+        # Round to nearest common rate
+        local rate_int=$(printf "%.0f" "$refresh" 2>/dev/null || echo "")
+        if [ -n "$rate_int" ] && [ "$rate_int" -gt 0 ] 2>/dev/null; then
+            echo "$rate_int"
+            return 0
+        fi
+    fi
+    
+    # Fallback: try parsing current MetaMode
+    local metamode
+    metamode=$(nvidia-settings -q CurrentMetaMode 2>/dev/null || true)
+    if [[ "$metamode" =~ ${dpy}:.*_([0-9]+) ]]; then
+        echo "${BASH_REMATCH[1]}"
+        return 0
+    fi
+    
+    echo ""
+    return 1
+}
+
 # Configure each display
 configure_displays() {
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
@@ -179,8 +272,93 @@ configure_displays() {
         rot_choice=${rot_choice:-1}
         DISPLAY_ROTATIONS[$i]="${rotations[$((rot_choice-1))]}"
         
+        # Refresh Rate
         echo ""
-        echo -e "${GREEN}✓ Configured $dpy: ${DISPLAY_RESOLUTIONS[$i]} @ ${DISPLAY_POSITIONS[$i]} (${DISPLAY_ROTATIONS[$i]})${NC}"
+        local chosen_res="${DISPLAY_RESOLUTIONS[$i]}"
+        echo -e "${BLUE}Detecting available refresh rates for $dpy at $chosen_res...${NC}"
+        local detected_rates
+        detected_rates=$(detect_refresh_rates "$dpy" "$chosen_res")
+        local current_rate
+        current_rate=$(detect_current_refresh_rate "$dpy")
+        
+        if [ -n "$detected_rates" ]; then
+            echo ""
+            echo "Detected refresh rates:"
+            local rate_idx=1
+            local rate_arr=()
+            while IFS= read -r rate; do
+                local marker=""
+                if [ "$rate" = "$current_rate" ]; then
+                    marker=" ${GREEN}(current)${NC}"
+                fi
+                echo -e "  [$rate_idx] ${rate}Hz${marker}"
+                rate_arr+=("$rate")
+                ((rate_idx++))
+            done <<< "$detected_rates"
+            echo "  [$rate_idx] Enter custom rate"
+            echo "  [$((rate_idx+1))] Auto (let driver decide)"
+            echo ""
+            read -p "Refresh rate [1-$((rate_idx+1))] (default: 1): " rate_choice
+            rate_choice=${rate_choice:-1}
+            
+            if [ "$rate_choice" = "$((rate_idx+1))" ]; then
+                DISPLAY_REFRESH_RATES[$i]=""
+                echo -e "${YELLOW}Using auto refresh rate${NC}"
+            elif [ "$rate_choice" = "$rate_idx" ]; then
+                read -p "Enter refresh rate (e.g., 165): " custom_rate
+                DISPLAY_REFRESH_RATES[$i]="$custom_rate"
+            else
+                DISPLAY_REFRESH_RATES[$i]="${rate_arr[$((rate_choice-1))]}"
+            fi
+        else
+            echo -e "${YELLOW}Could not auto-detect refresh rates.${NC}"
+            echo ""
+            echo "Common refresh rates:"
+            echo "  [1] 60Hz"
+            echo "  [2] 75Hz"
+            echo "  [3] 120Hz"
+            echo "  [4] 144Hz"
+            echo "  [5] 165Hz"
+            echo "  [6] 240Hz"
+            echo "  [7] Enter custom rate"
+            echo "  [8] Auto (let driver decide)"
+            echo ""
+            local common_rates=(60 75 120 144 165 240)
+            read -p "Refresh rate [1-8] (default: 8): " rate_choice
+            rate_choice=${rate_choice:-8}
+            
+            if [ "$rate_choice" = "8" ]; then
+                DISPLAY_REFRESH_RATES[$i]=""
+            elif [ "$rate_choice" = "7" ]; then
+                read -p "Enter refresh rate (e.g., 165): " custom_rate
+                DISPLAY_REFRESH_RATES[$i]="$custom_rate"
+            else
+                DISPLAY_REFRESH_RATES[$i]="${common_rates[$((rate_choice-1))]}"
+            fi
+        fi
+        
+        # ForceFullCompositionPipeline
+        echo ""
+        echo -e "${YELLOW}ForceFullCompositionPipeline${NC} eliminates stuttering on mixed"
+        echo "refresh rate setups (~1 frame of input latency trade-off)."
+        echo ""
+        read -p "Enable ForceFullCompositionPipeline for $dpy? [Y/n]: " ffcp_choice
+        if [[ "$ffcp_choice" =~ ^[Nn] ]]; then
+            DISPLAY_COMPOSITION_PIPELINE[$i]="Off"
+        else
+            DISPLAY_COMPOSITION_PIPELINE[$i]="On"
+        fi
+        
+        local rate_str=""
+        if [ -n "${DISPLAY_REFRESH_RATES[$i]}" ]; then
+            rate_str=" @ ${DISPLAY_REFRESH_RATES[$i]}Hz"
+        fi
+        local ffcp_str=""
+        if [ "${DISPLAY_COMPOSITION_PIPELINE[$i]}" = "On" ]; then
+            ffcp_str=" [FFCP]"
+        fi
+        echo ""
+        echo -e "${GREEN}✓ Configured $dpy: ${DISPLAY_RESOLUTIONS[$i]}${rate_str} @ ${DISPLAY_POSITIONS[$i]} (${DISPLAY_ROTATIONS[$i]})${ffcp_str}${NC}"
         echo ""
     done
 }
@@ -298,6 +476,8 @@ generate_metamode() {
         local res="${DISPLAY_RESOLUTIONS[$i]}"
         local rot="${DISPLAY_ROTATIONS[$i]}"
         local offset="${DISPLAY_OFFSETS[$i]}"
+        local refresh="${DISPLAY_REFRESH_RATES[$i]}"
+        local ffcp="${DISPLAY_COMPOSITION_PIPELINE[$i]}"
         
         # Skip if position is skip
         if [ "$pos" = "skip" ]; then
@@ -315,8 +495,17 @@ generate_metamode() {
             metamode+=", \\"$'\n'
         fi
         
+        # Build resolution string with refresh rate
+        local res_str="$res"
+        if [ -n "$refresh" ]; then
+            res_str="${res}_${refresh}"
+        fi
+        
         # Build display config
-        local config="$dpy: $res $offset"
+        local config="$dpy: $res_str $offset"
+        
+        # Build options block
+        local options=()
         
         # Add rotation if not normal
         if [ "$rot" != "normal" ]; then
@@ -326,7 +515,19 @@ generate_metamode() {
                 right) rot_value="Right" ;;
                 inverted) rot_value="Inverted" ;;
             esac
-            config+=" {Rotation=$rot_value}"
+            options+=("Rotation=$rot_value")
+        fi
+        
+        # Add ForceFullCompositionPipeline if enabled (not for capture card)
+        if [ "$ffcp" = "On" ] && [ "$dpy" != "$CAPTURE_DISPLAY" ]; then
+            options+=("ForceFullCompositionPipeline=On")
+        fi
+        
+        # Append options block if any
+        if [ ${#options[@]} -gt 0 ]; then
+            local opts_str
+            opts_str=$(IFS=', '; echo "${options[*]}")
+            config+=" {$opts_str}"
         fi
         
         metamode+="$config"
@@ -378,10 +579,29 @@ generate_scripts() {
     echo -e "${BLUE}Generating nvidia-base.sh...${NC}"
     local base_metamode=$(generate_metamode "false")
     
+    # Build display info comments
+    local display_comments=""
+    for i in "${!DISPLAY_IDS[@]}"; do
+        if [ "${DISPLAY_POSITIONS[$i]}" != "skip" ] && [ "${DISPLAY_IDS[$i]}" != "$CAPTURE_DISPLAY" ]; then
+            local rate_info=""
+            if [ -n "${DISPLAY_REFRESH_RATES[$i]}" ]; then
+                rate_info=" @ ${DISPLAY_REFRESH_RATES[$i]}Hz"
+            fi
+            local ffcp_info=""
+            if [ "${DISPLAY_COMPOSITION_PIPELINE[$i]}" = "On" ]; then
+                ffcp_info=" [FFCP]"
+            fi
+            display_comments+="# ${DISPLAY_POSITIONS[$i]^}: ${DISPLAY_IDS[$i]} (${DISPLAY_NAMES[$i]}) ${DISPLAY_RESOLUTIONS[$i]}${rate_info}${ffcp_info}\n"
+        fi
+    done
+    
     cat > "$SCREENLAYOUT_DIR/nvidia-base.sh" << EOF
 #!/bin/bash
 # NVIDIA MetaMode base layout
 # Generated by setup-wizard.sh on $(date)
+#
+$(echo -e "$display_comments")#
+# ForceFullCompositionPipeline=On fixes stuttering on mixed refresh rate setups
 
 export DISPLAY=$display_num
 export XAUTHORITY="\$HOME/.Xauthority"
@@ -454,21 +674,40 @@ EOF
     chmod +x "$SCREENLAYOUT_DIR/apply-layout.sh"
     echo -e "${GREEN}✓ Created $SCREENLAYOUT_DIR/apply-layout.sh${NC}"
     
-    # Generate systemd service
-    echo -e "${BLUE}Generating systemd service...${NC}"
-    cat > "$SYSTEMD_DIR/$SERVICE_NAME" << EOF
+    # Generate systemd service (login apply)
+    echo -e "${BLUE}Generating systemd services...${NC}"
+    cat > "$SYSTEMD_DIR/$SERVICE_NAME" << 'SVCEOF'
 [Unit]
 Description=Apply NVIDIA display layout after login
 After=graphical-session.target
 
 [Service]
 Type=oneshot
-ExecStart=$SCREENLAYOUT_DIR/apply-layout.sh
+ExecStartPre=/bin/sleep 2
+ExecStart=%h/.screenlayout/apply-layout.sh
 
 [Install]
 WantedBy=default.target
-EOF
+SVCEOF
     echo -e "${GREEN}✓ Created $SYSTEMD_DIR/$SERVICE_NAME${NC}"
+    
+    # Generate display monitor service (hotplug detection)
+    local MONITOR_SERVICE="nvidia-display-monitor.service"
+    cat > "$SYSTEMD_DIR/$MONITOR_SERVICE" << 'SVCEOF'
+[Unit]
+Description=NVIDIA Display Monitor - Auto-apply layout on display changes
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.screenlayout/display-monitor.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+SVCEOF
+    echo -e "${GREEN}✓ Created $SYSTEMD_DIR/$MONITOR_SERVICE${NC}"
     
     echo ""
 }
@@ -485,8 +724,10 @@ save_config() {
         echo "DISPLAY_${i}_ID=${DISPLAY_IDS[$i]}" >> "$config_file"
         echo "DISPLAY_${i}_NAME=${DISPLAY_NAMES[$i]}" >> "$config_file"
         echo "DISPLAY_${i}_RES=${DISPLAY_RESOLUTIONS[$i]}" >> "$config_file"
+        echo "DISPLAY_${i}_REFRESH=${DISPLAY_REFRESH_RATES[$i]}" >> "$config_file"
         echo "DISPLAY_${i}_POS=${DISPLAY_POSITIONS[$i]}" >> "$config_file"
         echo "DISPLAY_${i}_ROT=${DISPLAY_ROTATIONS[$i]}" >> "$config_file"
+        echo "DISPLAY_${i}_FFCP=${DISPLAY_COMPOSITION_PIPELINE[$i]}" >> "$config_file"
         echo "" >> "$config_file"
     done
     
@@ -513,12 +754,21 @@ finalize() {
     fi
     echo "  • $SCREENLAYOUT_DIR/apply-layout.sh"
     echo "  • $SYSTEMD_DIR/$SERVICE_NAME"
+    echo "  • $SYSTEMD_DIR/nvidia-display-monitor.service"
     echo ""
     
     echo -e "${YELLOW}Display layout:${NC}"
     for i in "${!DISPLAY_IDS[@]}"; do
         if [ "${DISPLAY_POSITIONS[$i]}" != "skip" ]; then
-            echo "  • ${DISPLAY_IDS[$i]}: ${DISPLAY_RESOLUTIONS[$i]} @ ${DISPLAY_POSITIONS[$i]} (${DISPLAY_ROTATIONS[$i]})"
+            local rate_info=""
+            if [ -n "${DISPLAY_REFRESH_RATES[$i]}" ]; then
+                rate_info=" @ ${DISPLAY_REFRESH_RATES[$i]}Hz"
+            fi
+            local ffcp_info=""
+            if [ "${DISPLAY_COMPOSITION_PIPELINE[$i]}" = "On" ]; then
+                ffcp_info=" [FFCP]"
+            fi
+            echo "  • ${DISPLAY_IDS[$i]}: ${DISPLAY_RESOLUTIONS[$i]}${rate_info} @ ${DISPLAY_POSITIONS[$i]} (${DISPLAY_ROTATIONS[$i]})${ffcp_info}"
         fi
     done
     echo ""
@@ -529,11 +779,23 @@ finalize() {
         echo ""
     fi
     
-    read -p "Enable systemd service for auto-apply on login? [Y/n]: " enable_service
+    read -p "Enable systemd services for auto-apply on login and hotplug? [Y/n]: " enable_service
     if [[ ! "$enable_service" =~ ^[Nn] ]]; then
+        # Also install the display monitor script
+        local monitor_src="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.screenlayout/display-monitor.sh"
+        if [ -f "$monitor_src" ] && [ ! -f "$SCREENLAYOUT_DIR/display-monitor.sh" ]; then
+            cp "$monitor_src" "$SCREENLAYOUT_DIR/display-monitor.sh"
+            chmod +x "$SCREENLAYOUT_DIR/display-monitor.sh"
+            echo -e "${GREEN}✓ Installed display-monitor.sh${NC}"
+        elif [ -f "$SCREENLAYOUT_DIR/display-monitor.sh" ]; then
+            echo -e "${GREEN}✓ display-monitor.sh already installed${NC}"
+        fi
+        
         systemctl --user daemon-reload
         systemctl --user enable "$SERVICE_NAME"
-        echo -e "${GREEN}✓ Service enabled${NC}"
+        systemctl --user enable "nvidia-display-monitor.service"
+        echo -e "${GREEN}✓ Login layout service enabled${NC}"
+        echo -e "${GREEN}✓ Display monitor service enabled (detects hotplug)${NC}"
     fi
     
     echo ""

@@ -1,7 +1,14 @@
-// Floorp Performance Tweaks - Reduce Frame Drops
-// Optimized for NVIDIA RTX 5070 Ti with 580 drivers
-// Copy this file to your Floorp profile folder:
-// ~/.floorp/<profile>/user.js
+// Floorp / Firefox Performance Tweaks - Reduce Frame Drops on NVIDIA GPUs
+// These settings work identically in both Floorp and Firefox (they share the same engine).
+// Optimized for NVIDIA proprietary drivers on X11 with mixed refresh rate monitors.
+//
+// Install locations:
+//   Floorp:  ~/.floorp/<profile>/user.js
+//   Firefox: ~/.mozilla/firefox/<profile>/user.js
+//   Floorp (Flatpak):  ~/.var/app/one.ablaze.floorp/.floorp/<profile>/user.js
+//   Firefox (Flatpak): ~/.var/app/org.mozilla.firefox/.mozilla/firefox/<profile>/user.js
+//
+// Or run: ./install-browser-tweaks.sh to auto-detect and install.
 
 // === HARDWARE ACCELERATION (NVIDIA) ===
 // Force enable hardware acceleration
