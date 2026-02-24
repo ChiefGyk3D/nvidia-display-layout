@@ -90,19 +90,31 @@ install_flatpak_env() {
     local app_id="$1"
     local browser_name="$2"
     
-    # Detect VA-API driver path (where nvidia_drv_video.so lives)
-    local vaapi_path="/usr/lib/x86_64-linux-gnu/dri"
+    # Flatpak reserves /usr — we can't share host /usr paths into the sandbox.
+    # Copy the NVIDIA VA-API driver to a user-accessible location instead.
+    local host_vaapi_path="/usr/lib/x86_64-linux-gnu/dri"
     if [ -f "/usr/lib64/dri/nvidia_drv_video.so" ]; then
-        vaapi_path="/usr/lib64/dri"  # Fedora/RHEL
+        host_vaapi_path="/usr/lib64/dri"  # Fedora/RHEL
+    fi
+    
+    local user_vaapi_path="$HOME/.local/lib/dri"
+    mkdir -p "$user_vaapi_path"
+    
+    if [ -f "${host_vaapi_path}/nvidia_drv_video.so" ]; then
+        cp "${host_vaapi_path}/nvidia_drv_video.so" "$user_vaapi_path/"
+        echo -e "${GREEN}✓ Copied nvidia_drv_video.so to ${user_vaapi_path}${NC}"
+    else
+        echo -e "${YELLOW}⚠ nvidia_drv_video.so not found at ${host_vaapi_path}${NC}"
+        echo -e "${YELLOW}  Hardware video decode may not work. Install nvidia-vaapi-driver.${NC}"
     fi
 
     flatpak override --user \
         --device=dri \
-        --filesystem="${vaapi_path}:ro" \
+        --filesystem="${user_vaapi_path}:ro" \
         --env=MOZ_X11_EGL=1 \
         --env=MOZ_DISABLE_RDD_SANDBOX=1 \
         --env=LIBVA_DRIVER_NAME=nvidia \
-        --env=LIBVA_DRIVERS_PATH="${vaapi_path}" \
+        --env=LIBVA_DRIVERS_PATH="${user_vaapi_path}" \
         --env=NVD_BACKEND=direct \
         --env=MOZ_WEBRENDER=1 \
         --env=__GL_SYNC_TO_VBLANK=0 \
@@ -111,7 +123,7 @@ install_flatpak_env() {
         "$app_id"
     
     echo -e "${GREEN}✓ Set Flatpak environment variables for $browser_name${NC}"
-    echo -e "  VA-API driver path: ${vaapi_path}"
+    echo -e "  VA-API driver path: ${user_vaapi_path}"
 }
 
 echo -e "${YELLOW}Installing tweaks...${NC}"
