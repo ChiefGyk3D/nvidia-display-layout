@@ -57,14 +57,27 @@ fi
 echo ""
 
 # Function to find profile directory
+# Uses profiles.ini to find the active profile instead of globbing
 find_profile_dir() {
     local base_dir="$1"
     local profile_dir=""
     
-    # Look for default-release profile first
-    profile_dir=$(find "$base_dir" -maxdepth 1 -type d -name "*.default-release*" 2>/dev/null | head -1)
+    # Use profiles.ini to find the install default (most reliable)
+    if [ -f "$base_dir/profiles.ini" ]; then
+        # Get the Default= path from the [Install*] section
+        local install_default
+        install_default=$(awk '/^\[Install/{found=1} found && /^Default=/{print $0; exit}' "$base_dir/profiles.ini" | cut -d= -f2)
+        if [ -n "$install_default" ] && [ -d "$base_dir/$install_default" ]; then
+            profile_dir="$base_dir/$install_default"
+        fi
+    fi
     
-    # Fall back to any default profile
+    # Fallback: look for default-release profile
+    if [ -z "$profile_dir" ]; then
+        profile_dir=$(find "$base_dir" -maxdepth 1 -type d -name "*.default-release*" 2>/dev/null | head -1)
+    fi
+    
+    # Fallback: any default profile
     if [ -z "$profile_dir" ]; then
         profile_dir=$(find "$base_dir" -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -1)
     fi
@@ -72,17 +85,54 @@ find_profile_dir() {
     echo "$profile_dir"
 }
 
-# Install user.js
+# Function to find ALL profile directories (for installing to all profiles)
+find_all_profile_dirs() {
+    local base_dir="$1"
+    
+    if [ -f "$base_dir/profiles.ini" ]; then
+        # Extract all Path= values from profiles.ini
+        grep "^Path=" "$base_dir/profiles.ini" | cut -d= -f2 | while read -r rel_path; do
+            if [ -d "$base_dir/$rel_path" ]; then
+                echo "$base_dir/$rel_path"
+            fi
+        done
+    else
+        # Fallback to globbing
+        find "$base_dir" -maxdepth 1 -type d -name "*.default*" 2>/dev/null
+    fi
+}
+
+# Install user.js to a single profile
 install_userjs() {
     local profile_dir="$1"
     local browser_name="$2"
     
     if [ -n "$profile_dir" ] && [ -d "$profile_dir" ]; then
         cp "$SCRIPT_DIR/user.js" "$profile_dir/"
-        echo -e "${GREEN}✓ Installed user.js to $browser_name profile${NC}"
+        echo -e "${GREEN}✓ Installed user.js to ${browser_name}: $(basename "$profile_dir")${NC}"
         return 0
     fi
     return 1
+}
+
+# Install user.js to ALL profiles found in a base directory
+install_userjs_all_profiles() {
+    local base_dir="$1"
+    local browser_name="$2"
+    local count=0
+    
+    while IFS= read -r profile_dir; do
+        if install_userjs "$profile_dir" "$browser_name"; then
+            ((count++))
+        fi
+    done < <(find_all_profile_dirs "$base_dir")
+    
+    if [ "$count" -eq 0 ]; then
+        # Fallback to single profile detection
+        local single_profile
+        single_profile=$(find_profile_dir "$base_dir")
+        install_userjs "$single_profile" "$browser_name"
+    fi
 }
 
 # Install Flatpak environment overrides
@@ -132,29 +182,25 @@ echo ""
 # Floorp Flatpak
 if [ "$FLOORP_FLATPAK" = true ]; then
     PROFILE_BASE="$HOME/.var/app/one.ablaze.floorp/.floorp"
-    PROFILE_DIR=$(find_profile_dir "$PROFILE_BASE")
-    install_userjs "$PROFILE_DIR" "Floorp (Flatpak)"
+    install_userjs_all_profiles "$PROFILE_BASE" "Floorp (Flatpak)"
     install_flatpak_env "one.ablaze.floorp" "Floorp"
 fi
 
 # Floorp Native
 if [ "$FLOORP_NATIVE" = true ]; then
-    PROFILE_DIR=$(find_profile_dir "$HOME/.floorp")
-    install_userjs "$PROFILE_DIR" "Floorp (Native)"
+    install_userjs_all_profiles "$HOME/.floorp" "Floorp (Native)"
 fi
 
 # Firefox Flatpak
 if [ "$FIREFOX_FLATPAK" = true ]; then
     PROFILE_BASE="$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox"
-    PROFILE_DIR=$(find_profile_dir "$PROFILE_BASE")
-    install_userjs "$PROFILE_DIR" "Firefox (Flatpak)"
+    install_userjs_all_profiles "$PROFILE_BASE" "Firefox (Flatpak)"
     install_flatpak_env "org.mozilla.firefox" "Firefox"
 fi
 
 # Firefox Native
 if [ "$FIREFOX_NATIVE" = true ]; then
-    PROFILE_DIR=$(find_profile_dir "$HOME/.mozilla/firefox")
-    install_userjs "$PROFILE_DIR" "Firefox (Native)"
+    install_userjs_all_profiles "$HOME/.mozilla/firefox" "Firefox (Native)"
 fi
 
 echo ""

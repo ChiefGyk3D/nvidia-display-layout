@@ -32,6 +32,17 @@ user_pref("gfx.vsync.compositor.unobserve-process-busy", false);
 user_pref("gfx.webrender.compositor", true);
 user_pref("gfx.webrender.compositor.force-enabled", true);
 
+// Pre-cache GPU shader programs at startup so new windows don't cause hitches
+// Without this, WebRender compiles shaders on-demand when new windows open,
+// causing frame drops on video playing in other windows
+user_pref("gfx.webrender.program-binary-disk-cache", true);
+user_pref("gfx.webrender.precache-shaders", true);
+
+// Increase WebRender worker threads for parallel scene building across windows
+// Default is 1 — more threads let the compositor handle multiple windows
+// without blocking. Set to CPU_CORES/4 or at least 4 for multi-monitor.
+user_pref("gfx.webrender.worker-count", 4);
+
 // === VSYNC & FRAME TIMING (Mixed Refresh Rate: 180Hz + 75Hz) ===
 // Better vsync handling to reduce tearing and dropped frames
 user_pref("gfx.vsync.force-disable-waitforvblank", false);
@@ -69,6 +80,15 @@ user_pref("media.gpu-process-decoder", true);
 // Adjust content processes (set based on your RAM - 8 is good for 16GB+)
 user_pref("dom.ipc.processCount", 8);
 user_pref("dom.ipc.processCount.webIsolated", 4);
+
+// Keep GPU process stable — prevent restarts that cause frame drops across all windows
+user_pref("layers.gpu-process.enabled", true);
+user_pref("layers.gpu-process.force-enabled", true);
+user_pref("layers.gpu-process.max_restarts", 0); // 0 = never restart — avoids frame hitches
+
+// Process pre-allocation: pre-launch content processes so new windows open faster
+user_pref("dom.ipc.processPrelaunch.enabled", true);
+user_pref("dom.ipc.processPrelaunch.fission.number", 3);
 
 // === SCROLLING SMOOTHNESS ===
 // Reduce jank during scrolling
