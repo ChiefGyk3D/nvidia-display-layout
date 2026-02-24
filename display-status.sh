@@ -1,13 +1,23 @@
 #!/bin/bash
-# Quick display detection and status check
-# Shows current displays and helps with reconfiguration
+# =============================================================================
+# NVIDIA Display Status & Configuration Tool
+# =============================================================================
+# Shows current display state, services, G-Sync/VRR, and saved configuration.
+# Provides an interactive menu for common actions (apply layout, run wizard, etc).
+#
+# Usage: ./display-status.sh
+#
+# Requires: nvidia-settings, systemd --user
+# =============================================================================
 
+# --- Color codes for terminal output ---
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+# --- Ensure X11 display variables are set (needed for nvidia-settings) ---
 export DISPLAY=${DISPLAY:-:1}
 export XAUTHORITY="$HOME/.Xauthority"
 
@@ -17,9 +27,10 @@ echo "║           NVIDIA Display Status & Configuration              ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
-# Check current displays
+# --- Connected displays (DPY-X identifiers from nvidia-settings) ---
 echo -e "${YELLOW}═══ Connected Displays ═══${NC}"
 echo ""
+# Query nvidia-settings for all display port targets and show connection status
 nvidia-settings -q dpys 2>/dev/null | grep -E "DPY-[0-9]+" | while read -r line; do
     if echo "$line" | grep -q "connected"; then
         echo -e "${GREEN}●${NC} $line"
@@ -29,13 +40,13 @@ nvidia-settings -q dpys 2>/dev/null | grep -E "DPY-[0-9]+" | while read -r line;
 done
 echo ""
 
-# Current MetaMode
+# --- Current MetaMode (the active display layout command) ---
 echo -e "${YELLOW}═══ Current MetaMode ═══${NC}"
 echo ""
 nvidia-settings -q CurrentMetaMode 2>/dev/null | grep -A1 "Attribute" | tail -1 | sed 's/^[[:space:]]*//'
 echo ""
 
-# Check services
+# --- Systemd user services status ---
 echo -e "${YELLOW}═══ Services Status ═══${NC}"
 echo ""
 
@@ -57,7 +68,9 @@ fi
 
 echo ""
 
-# Check for config
+# --- Saved layout configuration from last wizard run ---
+# The .layout-config file stores per-display settings (ID, resolution, refresh,
+# position, rotation, FFCP, G-Sync) so re-running the wizard can show defaults.
 echo -e "${YELLOW}═══ Configuration ═══${NC}"
 echo ""
 if [ -f "$HOME/.screenlayout/.layout-config" ]; then
@@ -70,7 +83,10 @@ else
 fi
 echo ""
 
-# G-Sync / VRR status
+# --- G-Sync / VRR status ---
+# AllowGSYNC: global G-Sync enable (for validated G-Sync monitors)
+# AllowVRR: Variable Refresh Rate (broader VRR support)
+# AllowGSYNCCompatible: per-display VRR for non-validated monitors (in MetaMode)
 echo -e "${YELLOW}═══ G-Sync / VRR Status ═══${NC}"
 echo ""
 GSYNC_STATUS=$(nvidia-settings -t -q AllowGSYNC 2>/dev/null)
@@ -94,7 +110,7 @@ else
 fi
 echo ""
 
-# Actions menu
+# --- Interactive actions menu ---
 echo -e "${YELLOW}═══ Actions ═══${NC}"
 echo ""
 echo "  [1] Apply layout now"

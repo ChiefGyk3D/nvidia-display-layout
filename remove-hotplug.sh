@@ -1,5 +1,17 @@
 #!/bin/bash
-# Remove hotplug/monitor support for NVIDIA display layout
+# =============================================================================
+# Remove NVIDIA Display Hotplug/Monitor Support
+# =============================================================================
+# Cleanly removes the display monitor service and/or udev rules installed by
+# install-hotplug.sh. The base layout scripts and systemd login service are
+# NOT removed — only the hotplug detection components.
+#
+# Usage:
+#   ./remove-hotplug.sh        # Remove monitor service (no root needed)
+#   sudo ./remove-hotplug.sh   # Also remove udev rules
+#
+# To fully uninstall everything, see the Uninstalling section in README.md.
+# =============================================================================
 
 set -e
 
@@ -11,7 +23,7 @@ NC='\033[0m'
 echo -e "${YELLOW}Removing NVIDIA Display Hotplug/Monitor Support${NC}"
 echo ""
 
-# Remove monitor service (no root needed)
+# --- Stop and disable the polling-based monitor service (user-level, no root) ---
 echo "Checking for display monitor service..."
 if systemctl --user is-active nvidia-display-monitor.service &>/dev/null; then
     systemctl --user stop nvidia-display-monitor.service
@@ -23,6 +35,7 @@ if systemctl --user is-enabled nvidia-display-monitor.service &>/dev/null 2>&1; 
     echo -e "${GREEN}✓ Disabled monitor service${NC}"
 fi
 
+# --- Remove the systemd service unit file and reload ---
 SERVICE_FILE="$HOME/.config/systemd/user/nvidia-display-monitor.service"
 if [ -f "$SERVICE_FILE" ]; then
     rm -f "$SERVICE_FILE"
@@ -32,7 +45,7 @@ else
     echo -e "${YELLOW}⚠ Monitor service not installed${NC}"
 fi
 
-# Remove udev rule (needs root)
+# --- Remove udev rule (alternative hotplug method, requires root) ---
 UDEV_RULE="/etc/udev/rules.d/99-nvidia-display-hotplug.rules"
 
 if [ -f "$UDEV_RULE" ]; then
