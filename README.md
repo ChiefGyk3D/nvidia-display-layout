@@ -19,6 +19,12 @@ A complete NVIDIA display management solution for X11 Linux desktops. Handles mu
 - `nvidia-settings`
 - Bash 4.0+
 
+## Tested Hardware
+
+- **ASUS TUF Gaming VG27WCS** (2560x1440 @ 180Hz) — primary monitors
+- **Elgato Cam Link 4K** — HDMI capture card (1080p/4K input)
+- NVIDIA GeForce RTX series GPUs
+
 ## Quick Start
 
 ```bash
@@ -102,12 +108,12 @@ The setup wizard adds `{ForceFullCompositionPipeline=On}` to each display's Meta
 
 ```bash
 nvidia-settings --assign "CurrentMetaMode=\
-DPY-3: 1920x1080_144 +0+580 {ForceFullCompositionPipeline=On}, \
-DPY-5: 1920x1080_144 +1920+580 {ForceFullCompositionPipeline=On}, \
-DPY-1: 1920x1080_75 +3840+0 {Rotation=Right, ForceFullCompositionPipeline=On}"
+DPY-3: 2560x1440_180 +0+240 {AllowGSYNCCompatible=On, ForceFullCompositionPipeline=On}, \
+DPY-5: 2560x1440_180 +2560+240 {AllowGSYNCCompatible=On, ForceFullCompositionPipeline=On}, \
+DPY-1: 1920x1080_75 +5120+0 {Rotation=Right, ForceFullCompositionPipeline=On}"
 ```
 
-The wizard auto-detects refresh rates via `nvidia-settings` and `xrandr`, or lets you pick from common rates (60/75/120/144/165/240Hz) or enter a custom value. FFCP is enabled per-display so you can skip it on monitors where you don't need it.
+The wizard auto-detects refresh rates via `nvidia-settings` and `xrandr`, or lets you pick from common rates (60/75/120/144/165/180/240Hz) or enter a custom value. FFCP and G-Sync Compatible are enabled per-display so you can skip them on monitors where you don't need them.
 
 | Benefit | Trade-off |
 |---------|-----------|
@@ -123,6 +129,8 @@ The project detects whether your capture card is connected and automatically pic
 
 - **Capture card plugged in** → uses `nvidia-capture.sh` (mirrors your chosen display)
 - **Capture card unplugged** → uses `nvidia-base.sh` (base layout only)
+
+If the capture card doesn't support the mirror display's native resolution (e.g., mirroring a 1440p monitor to a 1080p capture card), the wizard automatically configures `ViewPortIn`/`ViewPortOut` scaling so the full content is downscaled to fit.
 
 This happens automatically at boot and whenever the hotplug daemon detects a change. No manual switching needed.
 
@@ -329,6 +337,9 @@ The refresh rate suffix (e.g., `_144`) is optional. If omitted, the driver picks
 |--------|-------------|
 | `Rotation=Left\|Right\|Inverted` | Rotate display |
 | `ForceFullCompositionPipeline=On` | Fix mixed refresh rate stuttering |
+| `AllowGSYNCCompatible=On` | Enable VRR/FreeSync on non-validated monitors |
+| `ViewPortIn=WxH` | Input viewport size (for scaling) |
+| `ViewPortOut=WxH+X+Y` | Output viewport size (for scaling) |
 
 ### Example Layouts
 

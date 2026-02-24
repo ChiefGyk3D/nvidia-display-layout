@@ -26,10 +26,12 @@ declare -a DISPLAY_POSITIONS
 declare -a DISPLAY_ROTATIONS
 declare -a DISPLAY_OFFSETS
 declare -a DISPLAY_COMPOSITION_PIPELINE
+declare -a DISPLAY_GSYNC_COMPATIBLE
 
 # Capture card config
 CAPTURE_ENABLED=false
 CAPTURE_DISPLAY=""
+CAPTURE_DISPLAY_NAME=""
 CAPTURE_MIRROR_TARGET=""
 
 echo -e "${CYAN}"
@@ -319,17 +321,18 @@ configure_displays() {
             echo "  [3] 120Hz"
             echo "  [4] 144Hz"
             echo "  [5] 165Hz"
-            echo "  [6] 240Hz"
-            echo "  [7] Enter custom rate"
-            echo "  [8] Auto (let driver decide)"
+            echo "  [6] 180Hz"
+            echo "  [7] 240Hz"
+            echo "  [8] Enter custom rate"
+            echo "  [9] Auto (let driver decide)"
             echo ""
-            local common_rates=(60 75 120 144 165 240)
-            read -p "Refresh rate [1-8] (default: 8): " rate_choice
-            rate_choice=${rate_choice:-8}
+            local common_rates=(60 75 120 144 165 180 240)
+            read -p "Refresh rate [1-9] (default: 9): " rate_choice
+            rate_choice=${rate_choice:-9}
             
-            if [ "$rate_choice" = "8" ]; then
+            if [ "$rate_choice" = "9" ]; then
                 DISPLAY_REFRESH_RATES[$i]=""
-            elif [ "$rate_choice" = "7" ]; then
+            elif [ "$rate_choice" = "8" ]; then
                 read -p "Enter refresh rate (e.g., 165): " custom_rate
                 DISPLAY_REFRESH_RATES[$i]="$custom_rate"
             else
@@ -349,6 +352,19 @@ configure_displays() {
             DISPLAY_COMPOSITION_PIPELINE[$i]="On"
         fi
         
+        # G-Sync Compatible
+        echo ""
+        echo -e "${YELLOW}AllowGSYNCCompatible${NC} enables variable refresh rate (VRR)"
+        echo "for monitors not officially validated as G-Sync Compatible."
+        echo "Reduces tearing and improves smoothness if your monitor supports FreeSync/VRR."
+        echo ""
+        read -p "Enable G-Sync Compatible for $dpy? [Y/n]: " gsync_choice
+        if [[ "$gsync_choice" =~ ^[Nn] ]]; then
+            DISPLAY_GSYNC_COMPATIBLE[$i]="Off"
+        else
+            DISPLAY_GSYNC_COMPATIBLE[$i]="On"
+        fi
+        
         local rate_str=""
         if [ -n "${DISPLAY_REFRESH_RATES[$i]}" ]; then
             rate_str=" @ ${DISPLAY_REFRESH_RATES[$i]}Hz"
@@ -357,8 +373,12 @@ configure_displays() {
         if [ "${DISPLAY_COMPOSITION_PIPELINE[$i]}" = "On" ]; then
             ffcp_str=" [FFCP]"
         fi
+        local gsync_str=""
+        if [ "${DISPLAY_GSYNC_COMPATIBLE[$i]}" = "On" ]; then
+            gsync_str=" [G-Sync]"
+        fi
         echo ""
-        echo -e "${GREEN}✓ Configured $dpy: ${DISPLAY_RESOLUTIONS[$i]}${rate_str} @ ${DISPLAY_POSITIONS[$i]} (${DISPLAY_ROTATIONS[$i]})${ffcp_str}${NC}"
+        echo -e "${GREEN}✓ Configured $dpy: ${DISPLAY_RESOLUTIONS[$i]}${rate_str} @ ${DISPLAY_POSITIONS[$i]} (${DISPLAY_ROTATIONS[$i]})${ffcp_str}${gsync_str}${NC}"
         echo ""
     done
 }
@@ -383,6 +403,7 @@ configure_capture() {
         echo ""
         read -p "Capture card display: " cap_choice
         CAPTURE_DISPLAY="${DISPLAY_IDS[$((cap_choice-1))]}"
+        CAPTURE_DISPLAY_NAME="${DISPLAY_NAMES[$((cap_choice-1))]}"
         
         echo ""
         echo "Select which display the capture card should mirror:"
@@ -523,6 +544,12 @@ generate_metamode() {
             options+=("ForceFullCompositionPipeline=On")
         fi
         
+        # Add AllowGSYNCCompatible if enabled (not for capture card)
+        local gsync="${DISPLAY_GSYNC_COMPATIBLE[$i]}"
+        if [ "$gsync" = "On" ] && [ "$dpy" != "$CAPTURE_DISPLAY" ]; then
+            options+=("AllowGSYNCCompatible=On")
+        fi
+        
         # Append options block if any
         if [ ${#options[@]} -gt 0 ]; then
             local opts_str
@@ -535,13 +562,49 @@ generate_metamode() {
     
     # Add capture card mirroring if enabled
     if [ "$include_capture" = "true" ] && [ "$CAPTURE_ENABLED" = true ]; then
-        # Find the mirror target's offset
+        # Find the mirror target's resolution and offset
         for i in "${!DISPLAY_IDS[@]}"; do
             if [ "${DISPLAY_IDS[$i]}" = "$CAPTURE_MIRROR_TARGET" ]; then
                 local mirror_res="${DISPLAY_RESOLUTIONS[$i]}"
                 local mirror_offset="${DISPLAY_OFFSETS[$i]}"
                 metamode+=", \\"$'\n'
-                metamode+="$CAPTURE_DISPLAY: $mirror_res $mirror_offset"
+                
+                # Detect capture card's supported resolutions
+                local capture_modes
+                capture_modes=$(xrandr 2>/dev/null | grep -A1 "^${CAPTURE_DISPLAY_NAME} connected" | tail -1 | grep -oP '\d+x\d+' | head -1)
+                
+                # Check if capture card supports the mirror resolution natively
+                local capture_supports_res=false
+                if [ -n "$capture_modes" ]; then
+                    local cap_output
+                    cap_output=$(xrandr 2>/dev/null | sed -n "/^${CAPTURE_DISPLAY_NAME} connected/,/^[A-Z]/p" | head -20)
+                    if echo "$cap_output" | grep -q "^[[:space:]]*${mirror_res}"; then
+                        capture_supports_res=true
+                    fi
+                fi
+                
+                if [ "$capture_supports_res" = true ]; then
+                    # Capture card supports the resolution natively
+                    metamode+="$CAPTURE_DISPLAY: $mirror_res $mirror_offset"
+                else
+                    # Capture card can't do the mirror resolution — find best fallback
+                    # Try common resolutions the capture card supports
+                    local fallback_res=""
+                    for try_res in "$mirror_res" "1920x1080" "1280x720"; do
+                        if [ -n "$cap_output" ] && echo "$cap_output" | grep -q "^[[:space:]]*${try_res}"; then
+                            fallback_res="$try_res"
+                            break
+                        fi
+                    done
+                    fallback_res="${fallback_res:-1920x1080}"
+                    
+                    if [ "$fallback_res" != "$mirror_res" ]; then
+                        # Use ViewPortIn/ViewPortOut to scale
+                        metamode+="$CAPTURE_DISPLAY: $fallback_res $mirror_offset {ViewPortIn=$mirror_res, ViewPortOut=${fallback_res}+0+0}"
+                    else
+                        metamode+="$CAPTURE_DISPLAY: $mirror_res $mirror_offset"
+                    fi
+                fi
                 break
             fi
         done
@@ -653,7 +716,8 @@ EOF
 export DISPLAY=$display_num
 export XAUTHORITY="\$HOME/.Xauthority"
 
-if nvidia-settings -q dpys | grep -q "${capture_name}.*connected.*enabled"; then
+# Check if capture card is connected (with or without enabled)
+if nvidia-settings -q dpys | grep -q "${capture_name}) (connected"; then
     ~/.screenlayout/nvidia-capture.sh
 else
     ~/.screenlayout/nvidia-base.sh
@@ -728,6 +792,7 @@ save_config() {
         echo "DISPLAY_${i}_POS=${DISPLAY_POSITIONS[$i]}" >> "$config_file"
         echo "DISPLAY_${i}_ROT=${DISPLAY_ROTATIONS[$i]}" >> "$config_file"
         echo "DISPLAY_${i}_FFCP=${DISPLAY_COMPOSITION_PIPELINE[$i]}" >> "$config_file"
+        echo "DISPLAY_${i}_GSYNC=${DISPLAY_GSYNC_COMPATIBLE[$i]}" >> "$config_file"
         echo "" >> "$config_file"
     done
     
@@ -768,7 +833,11 @@ finalize() {
             if [ "${DISPLAY_COMPOSITION_PIPELINE[$i]}" = "On" ]; then
                 ffcp_info=" [FFCP]"
             fi
-            echo "  • ${DISPLAY_IDS[$i]}: ${DISPLAY_RESOLUTIONS[$i]}${rate_info} @ ${DISPLAY_POSITIONS[$i]} (${DISPLAY_ROTATIONS[$i]})${ffcp_info}"
+            local gsync_info=""
+            if [ "${DISPLAY_GSYNC_COMPATIBLE[$i]}" = "On" ]; then
+                gsync_info=" [G-Sync]"
+            fi
+            echo "  • ${DISPLAY_IDS[$i]}: ${DISPLAY_RESOLUTIONS[$i]}${rate_info} @ ${DISPLAY_POSITIONS[$i]} (${DISPLAY_ROTATIONS[$i]})${ffcp_info}${gsync_info}"
         fi
     done
     echo ""

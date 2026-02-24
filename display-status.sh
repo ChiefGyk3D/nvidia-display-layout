@@ -62,11 +62,35 @@ echo -e "${YELLOW}═══ Configuration ═══${NC}"
 echo ""
 if [ -f "$HOME/.screenlayout/.layout-config" ]; then
     echo "Saved configuration found:"
-    grep -E "^DISPLAY_[0-9]+_(ID|RES|REFRESH|POS|ROT|FFCP)=" "$HOME/.screenlayout/.layout-config" | while read -r line; do
+    grep -E "^DISPLAY_[0-9]+_(ID|RES|REFRESH|POS|ROT|FFCP|GSYNC)=" "$HOME/.screenlayout/.layout-config" | while read -r line; do
         echo "  $line"
     done
 else
     echo "No saved configuration found."
+fi
+echo ""
+
+# G-Sync / VRR status
+echo -e "${YELLOW}═══ G-Sync / VRR Status ═══${NC}"
+echo ""
+GSYNC_STATUS=$(nvidia-settings -t -q AllowGSYNC 2>/dev/null)
+VRR_STATUS=$(nvidia-settings -t -q AllowVRR 2>/dev/null)
+if [ "$GSYNC_STATUS" = "1" ]; then
+    echo -e "${GREEN}●${NC} AllowGSYNC: enabled"
+else
+    echo -e "${RED}○${NC} AllowGSYNC: disabled"
+fi
+if [ "$VRR_STATUS" = "1" ]; then
+    echo -e "${GREEN}●${NC} AllowVRR: enabled"
+else
+    echo -e "${RED}○${NC} AllowVRR: disabled"
+fi
+# Check per-display G-Sync Compatible from current MetaMode
+METAMODE=$(nvidia-settings -q CurrentMetaMode 2>/dev/null || true)
+if echo "$METAMODE" | grep -q "AllowGSYNCCompatible=On"; then
+    echo -e "${GREEN}●${NC} AllowGSYNCCompatible: enabled (in MetaMode)"
+else
+    echo -e "${YELLOW}○${NC} AllowGSYNCCompatible: not set in MetaMode"
 fi
 echo ""
 
