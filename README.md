@@ -18,6 +18,27 @@ A complete NVIDIA display management solution for X11 Linux desktops. Handles mu
 - X11 (not Wayland)
 - `nvidia-settings`
 - Bash 4.0+
+- `nvidia-vaapi-driver` (for browser hardware video decoding)
+
+### Install Prerequisites
+
+```bash
+# Ubuntu/Debian
+sudo apt install nvidia-settings nvidia-vaapi-driver
+
+# Fedora
+sudo dnf install nvidia-settings nvidia-vaapi-driver
+
+# Arch
+sudo pacman -S nvidia-settings libva-nvidia-driver
+```
+
+Verify VA-API is working:
+
+```bash
+vainfo
+# Should show: "VA-API NVDEC driver" with supported codecs
+```
 
 ## Tested Hardware
 
@@ -30,7 +51,13 @@ A complete NVIDIA display management solution for X11 Linux desktops. Handles mu
 ```bash
 git clone https://github.com/ChiefGyk3D/nvidia-capture-card.git
 cd nvidia-capture-card
+
+# 1. Configure display layout
 ./setup-wizard.sh
+
+# 2. Install browser performance tweaks (optional but recommended)
+cd browser-tweaks
+./install-browser-tweaks.sh
 ```
 
 The wizard will:
@@ -39,10 +66,19 @@ The wizard will:
 2. Auto-detect available refresh rates for each
 3. Configure position, resolution, refresh rate, and rotation per display
 4. Ask whether to enable ForceFullCompositionPipeline (fixes mixed Hz stuttering)
-5. Optionally set up HDMI capture card mirroring
-6. Generate personalized layout scripts
-7. Install and enable systemd services for auto-start + hotplug
-8. Apply the layout immediately
+5. Ask whether to enable G-Sync Compatible (VRR on non-validated monitors)
+6. Optionally set up HDMI capture card mirroring (with auto-scaling if resolutions don't match)
+7. Generate personalized layout scripts
+8. Install and enable systemd services for auto-start + hotplug
+9. Apply the layout immediately
+
+The browser tweaks installer will:
+
+1. Auto-detect Floorp/Firefox (Flatpak or native)
+2. Install optimized `user.js` settings for NVIDIA hardware acceleration
+3. Copy the NVIDIA VA-API driver to a Flatpak-accessible path (Flatpak sandboxes block `/usr`)
+4. Set Flatpak environment overrides for hardware video decoding
+5. Restart your browser to apply
 
 ## How It Works
 
@@ -210,7 +246,7 @@ The `user.js` file handles everything automatically on startup. However, if you 
 | `media.hardware-video-decoding.enabled` | `true` | Enable hardware video decode |
 | `media.hardware-video-decoding.force-enabled` | `true` | Force it even if not auto-detected |
 | `media.ffmpeg.vaapi.enabled` | `true` | VA-API via nvidia-vaapi-driver |
-| `media.ffvpx.enabled` | `false` | Disable software VP8/VP9 (use GPU instead) |
+| `media.ffvpx.enabled` | `true` | Keep enabled — needed for decode pipeline negotiation |
 | `media.rdd-ffmpeg.enabled` | `true` | FFmpeg in RDD process |
 | `media.rdd-vpx.enabled` | `true` | VP9 in RDD process |
 | `media.av1.enabled` | `true` | Enable AV1 codec |
@@ -236,7 +272,7 @@ Verify it's working: `vainfo` should show NVIDIA as the driver.
 | Setting | Value | What it does |
 |---------|-------|-------------|
 | `layout.frame_rate` | `-1` | Auto-detect refresh rate (critical for mixed Hz) |
-| `gfx.display.max-frame-rate` | `144` | Cap at your highest monitor's Hz (adjust to match yours) |
+| `gfx.display.max-frame-rate` | `180` | Cap at your highest monitor's Hz (adjust to match yours) |
 | `gfx.webrender.compositor` | `true` | WebRender compositor |
 | `gfx.webrender.compositor.force-enabled` | `true` | Force compositor |
 | `widget.wayland.vsync.enabled` | `false` | Disable Wayland vsync (X11 setups) |
@@ -388,7 +424,9 @@ The polling-based monitor service (recommended) is more reliable than udev rules
 1. Verify FFCP: `nvidia-settings -q CurrentMetaMode | grep ForceFullCompositionPipeline`
 2. Check `about:support` → Graphics → Compositing should say WebRender
 3. Verify VA-API: `vainfo` (requires `nvidia-vaapi-driver`)
-4. Restart browser after installing tweaks
+4. Check GPU decode is active: `nvidia-smi pmon -c 5` — the `dec` column should show usage during video playback
+5. Restart browser after installing tweaks
+6. **Flatpak users:** Run `install-browser-tweaks.sh` — it copies the VA-API driver to `~/.local/lib/dri/` because Flatpak blocks `/usr` paths inside the sandbox. Without this, hardware video decode silently falls back to software.
 
 ## Design Principles
 

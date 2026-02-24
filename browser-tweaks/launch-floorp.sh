@@ -11,6 +11,17 @@ export MOZ_X11_EGL=1
 # Enable hardware video acceleration via VA-API/NVDEC
 export MOZ_DISABLE_RDD_SANDBOX=1
 export LIBVA_DRIVER_NAME=nvidia
+export NVD_BACKEND=direct
+
+# VA-API driver path — Flatpak can't access /usr, so use the user-local copy
+# Run install-browser-tweaks.sh to set this up, or copy nvidia_drv_video.so manually
+if [ -d "$HOME/.local/lib/dri" ]; then
+    export LIBVA_DRIVERS_PATH="$HOME/.local/lib/dri"
+elif [ -d "/usr/lib/x86_64-linux-gnu/dri" ]; then
+    export LIBVA_DRIVERS_PATH="/usr/lib/x86_64-linux-gnu/dri"
+elif [ -d "/usr/lib64/dri" ]; then
+    export LIBVA_DRIVERS_PATH="/usr/lib64/dri"
+fi
 
 # Enable WebRender compositor
 export MOZ_WEBRENDER=1
