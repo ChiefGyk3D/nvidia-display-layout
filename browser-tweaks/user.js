@@ -32,7 +32,7 @@ user_pref("gfx.vsync.compositor.unobserve-process-busy", false);
 user_pref("gfx.webrender.compositor", true);
 user_pref("gfx.webrender.compositor.force-enabled", true);
 
-// === VSYNC & FRAME TIMING (Mixed Refresh Rate: 144Hz + 75Hz) ===
+// === VSYNC & FRAME TIMING (Mixed Refresh Rate: 180Hz + 75Hz) ===
 // Better vsync handling to reduce tearing and dropped frames
 user_pref("gfx.vsync.force-disable-waitforvblank", false);
 user_pref("layout.frame_rate", -1); // Auto-detect - IMPORTANT for mixed refresh rates!
@@ -44,7 +44,7 @@ user_pref("gfx.webrender.batched-upload-threshold", 262144);
 // Multi-monitor mixed refresh rate fixes
 user_pref("widget.wayland.vsync.enabled", false); // X11 specific
 user_pref("gfx.webrender.all.async-scene-builder", true);
-user_pref("gfx.display.max-frame-rate", 144); // Cap at highest monitor
+user_pref("gfx.display.max-frame-rate", 180); // Cap at highest monitor
 
 // === VIDEO DECODING (NVIDIA NVDEC) ===
 // Offload decoding to GPU via NVDEC
@@ -52,12 +52,18 @@ user_pref("image.mem.decode_bytes_at_a_time", 65536);
 user_pref("media.ffmpeg.vaapi.enabled", true); // Works with nvidia-vaapi-driver
 user_pref("media.av1.enabled", true);
 user_pref("media.mediasource.vp9.enabled", true);
+
+// Enable RDD (Remote Data Decoder) process for hardware decode
+user_pref("media.rdd-process.enabled", true);
 user_pref("media.rdd-ffmpeg.enabled", true);
 user_pref("media.rdd-vpx.enabled", true);
 
 // NVIDIA NVDEC support
-user_pref("media.ffvpx.enabled", false); // Disable software VP8/VP9, use hardware
+// Let the browser negotiate the decode pipeline — don't disable ffvpx
+// as it's needed for pipeline fallback on newer Gecko versions
+user_pref("media.ffvpx.enabled", true);
 user_pref("media.navigator.mediadatadecoder_vpx_enabled", true);
+user_pref("media.gpu-process-decoder", true);
 
 // === CONTENT PROCESS OPTIMIZATION ===
 // Adjust content processes (set based on your RAM - 8 is good for 16GB+)
