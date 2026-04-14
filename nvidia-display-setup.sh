@@ -70,7 +70,7 @@ if [ "${1:-}" = "--setup" ]; then
         fi
     done
     err "Setup wizard not found. Install the nvidia-capture-card project first."
-    err "  git clone https://github.com/ChiefGyk3D/nvidia-capture-card.git"
+    err "  git clone https://github.com/ChiefGyk3D/nvidia-display-layout.git"
     exit 1
 fi
 

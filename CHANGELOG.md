@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- Elgato 4K Pro capture card support — outputs at native 1440p without ViewPort scaling
 - Shader pre-caching settings (`gfx.webrender.program-binary-disk-cache`, `gfx.webrender.precache-shaders`) to eliminate frame drops when opening new browser windows
 - GPU process stability settings (`layers.gpu-process.force-enabled`, `max_restarts=0`) to prevent frame hitches
 - WebRender worker thread tuning (`gfx.webrender.worker-count=4`) for parallel scene building across multiple windows

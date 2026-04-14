@@ -1,7 +1,7 @@
 #!/bin/bash
 # Firefox launcher with NVIDIA optimizations
 # Same env vars as launch-floorp.sh — they share the same engine
-# Works with: https://github.com/ChiefGyk3D/nvidia-capture-card
+# Works with: https://github.com/ChiefGyk3D/nvidia-display-layout
 # Run this instead of the regular Firefox launcher for best performance
 
 # === NVIDIA + X11 Environment Variables ===

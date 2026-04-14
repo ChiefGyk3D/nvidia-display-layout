@@ -1,7 +1,7 @@
 #!/bin/bash
 # Floorp launcher with NVIDIA optimizations
 # These env vars also work for Firefox — see launch-firefox.sh
-# Works with: https://github.com/ChiefGyk3D/nvidia-capture-card
+# Works with: https://github.com/ChiefGyk3D/nvidia-display-layout
 # Run this instead of the regular Floorp launcher for best performance
 
 # === NVIDIA + X11 Environment Variables ===

@@ -52,6 +52,7 @@ vainfo
 
 | Device | Supported Input | Notes |
 |--------|----------------|-------|
+| Elgato 4K Pro | 1080p, 1440p, 4K | Supports 1440p natively — no ViewPort scaling needed |
 | Elgato Cam Link 4K | 1080p, 4K | Does **not** support 1440p — use ViewPort scaling |
 
 ### GPUs
@@ -69,13 +70,13 @@ vainfo
 | Fedora 39+ | Expected | `dnf install nvidia-settings nvidia-vaapi-driver` |
 | Arch Linux | Expected | `pacman -S nvidia-settings libva-nvidia-driver` |
 
-> **Contributions welcome!** If you test on hardware not listed here, please [open an issue](https://github.com/ChiefGyk3D/nvidia-capture-card/issues) or submit a PR to update this table.
+> **Contributions welcome!** If you test on hardware not listed here, please [open an issue](https://github.com/ChiefGyk3D/nvidia-display-layout/issues) or submit a PR to update this table.
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/ChiefGyk3D/nvidia-capture-card.git
-cd nvidia-capture-card
+git clone https://github.com/ChiefGyk3D/nvidia-display-layout.git
+cd nvidia-display-layout
 
 # 1. Configure display layout
 ./setup-wizard.sh
@@ -191,9 +192,68 @@ The project detects whether your capture card is connected and automatically pic
 - **Capture card plugged in** → uses `nvidia-capture.sh` (mirrors your chosen display)
 - **Capture card unplugged** → uses `nvidia-base.sh` (base layout only)
 
-If the capture card doesn't support the mirror display's native resolution (e.g., mirroring a 1440p monitor to a 1080p capture card), the wizard automatically configures `ViewPortIn`/`ViewPortOut` scaling so the full content is downscaled to fit.
+If your capture card supports the mirror display's native resolution (e.g., Elgato 4K Pro at 1440p), the wizard outputs at that resolution directly — no scaling overhead. If the capture card doesn't support the resolution (e.g., mirroring a 1440p monitor to a 1080p Cam Link 4K), the wizard automatically configures `ViewPortIn`/`ViewPortOut` scaling so the full content is downscaled to fit.
 
 This happens automatically at boot and whenever the hotplug daemon detects a change. No manual switching needed.
+
+## PipeWire Combined Audio Sink Integration (Optional)
+
+If you use a capture card for streaming or recording (e.g., a 2PC setup), you likely want audio to play through **both** your local speakers/headphones **and** the HDMI output to the capture card simultaneously. The [PipeWire Combined Audio Output](https://github.com/ChiefGyk3D/pipewire_sink) project handles exactly this.
+
+### How It Works
+
+When `apply-layout.sh` detects your capture card is connected, it automatically:
+
+1. Applies the NVIDIA display layout with the capture card mirror
+2. Waits for the HDMI audio handshake to complete
+3. Forces the NVIDIA HDMI audio profile active
+4. Calls `reset-pipewire` to create a combined audio sink (speakers + HDMI capture)
+
+When the capture card is **not** connected, none of the audio integration runs — your audio stays on its normal default output.
+
+This triggers both:
+- **At startup** — via the `nvidia-display-monitor.service` or `apply-display-layout.service`
+- **On hotplug** — when the display monitor daemon detects the capture card was plugged in
+
+### Setup
+
+1. **Install the PipeWire combined sink project:**
+
+   ```bash
+   git clone https://github.com/ChiefGyk3D/pipewire_sink.git
+   cd pipewire_sink
+   ./install.sh
+   ```
+
+   This installs `reset-pipewire` to `~/.local/bin/`.
+
+2. **That's it.** The `apply-layout.sh` script automatically detects `~/.local/bin/reset-pipewire` and calls it when a capture card is found. No additional configuration needed.
+
+### Disabling Audio Integration
+
+If you have `reset-pipewire` installed but don't want automatic audio resets on display changes:
+
+```bash
+# Set the environment variable before launching, or edit apply-layout.sh:
+RESET_PIPEWIRE_BIN=none ~/.screenlayout/apply-layout.sh
+```
+
+Or edit `~/.screenlayout/apply-layout.sh` and set:
+
+```bash
+RESET_PIPEWIRE_BIN="none"
+```
+
+### Logs
+
+Audio reset output is logged alongside the display layout changes. Check:
+
+```bash
+# Display monitor log (includes PipeWire reset output)
+cat /tmp/nvidia-display-monitor.log
+```
+
+Lines prefixed with `[pipewire]` are from the audio reset.
 
 ## G-Sync Compatible (VRR)
 
@@ -372,7 +432,7 @@ After installing the tweaks (`user.js` or manual `about:config`), you may also n
 ## Project Structure
 
 ```
-nvidia-capture-card/
+nvidia-display-layout/
 ├── setup-wizard.sh              # Interactive configuration wizard
 ├── nvidia-display-setup.sh      # Quick apply / status / setup launcher
 ├── display-status.sh            # Status checker and action menu
@@ -449,7 +509,7 @@ The key files to preserve:
 To pull the latest fixes and improvements:
 
 ```bash
-cd nvidia-capture-card
+cd nvidia-display-layout
 git pull
 
 # Re-run the wizard if scripts changed
@@ -499,7 +559,7 @@ rm -f ~/.local/lib/dri/nvidia_drv_video.so
 
 # 5. Remove the repo
 cd ..
-rm -rf nvidia-capture-card
+rm -rf nvidia-display-layout
 ```
 
 After uninstalling, NVIDIA will revert to its default display behavior. ForceFullCompositionPipeline and G-Sync Compatible settings are only active while the layout scripts apply them — they don't persist in the driver permanently.
@@ -549,7 +609,7 @@ The refresh rate suffix (e.g., `_144`) is optional. If omitted, the driver picks
 | **X11 only** | This toolkit uses NVIDIA MetaModes and `nvidia-settings`, which are X11-specific. Wayland uses a completely different display protocol and is not supported. |
 | **NVIDIA proprietary driver only** | Nouveau (open-source) doesn't support MetaModes, ForceFullCompositionPipeline, or NVDEC hardware decode. |
 | **No per-window refresh rate** | X11 + NVIDIA applies one composition rate globally. FFCP mitigates this but individual windows can't run at different Hz. |
-| **Capture card resolution limits** | Most USB capture cards don't support 1440p input. The toolkit auto-scales with ViewPort, but the capture output will be at the card's native resolution (usually 1080p). |
+| **Capture card resolution limits** | Some USB capture cards (e.g., Cam Link 4K) don't support 1440p input — the toolkit auto-scales with ViewPort. Newer cards like the Elgato 4K Pro handle 1440p natively with no scaling needed. |
 | **udev hotplug unreliable** | NVIDIA proprietary drivers often don't emit kernel hotplug events. Use the polling monitor service instead (the default). |
 | **~1 frame input latency** | ForceFullCompositionPipeline adds approximately 1 frame of input latency. Competitive gamers may want to disable it on their primary gaming monitor. |
 | **Flatpak VA-API workaround** | Flatpak sandboxes block `/usr/lib` paths. The installer copies `nvidia_drv_video.so` to `~/.local/lib/dri/`. After NVIDIA driver updates, re-run `install-browser-tweaks.sh` to refresh the copy. |
@@ -594,13 +654,19 @@ Capture cards that don't support the source display's resolution are silently dr
 - `nvidia-settings -q dpys` shows the capture card as connected but `nvidia-settings -q CurrentMetaMode` doesn't include it
 - The capture card shows no signal or a black screen
 
-**Fix:** The setup wizard detects this and configures ViewPortIn/ViewPortOut scaling automatically. If you set things up manually, add:
+**Fix:** If your capture card supports the mirror resolution natively (e.g., Elgato 4K Pro at 1440p), output directly:
+
+```
+DPY-0: 2560x1440 +2560+240
+```
+
+If your capture card only supports 1080p (e.g., Cam Link 4K), use ViewPort scaling:
 
 ```
 DPY-0: 1920x1080 +2560+240 {ViewPortIn=2560x1440, ViewPortOut=1920x1080+0+0}
 ```
 
-This tells the driver to accept 1440p input and scale it down to 1080p output.
+The setup wizard detects this automatically and configures the correct mode.
 
 ### VA-API not working after driver update
 
@@ -646,9 +712,9 @@ No. The wizard installs systemd user services that automatically apply your layo
 
 It's not recommended. GNOME Display Settings, KDE Display Configuration, and similar tools use xrandr or Wayland APIs which can conflict with NVIDIA MetaModes. If you use this toolkit, let it handle display configuration exclusively.
 
-### My capture card only supports 1080p but my monitor is 1440p/4K
+### My capture card doesn't support my monitor's resolution
 
-The wizard handles this automatically. It detects the resolution mismatch and configures ViewPortIn/ViewPortOut scaling so the full desktop content is downscaled to the capture card's resolution. No manual configuration needed.
+The wizard handles this automatically. If the capture card supports the resolution natively (e.g., Elgato 4K Pro at 1440p), it outputs directly. If there's a mismatch (e.g., Cam Link 4K mirroring a 1440p display), it configures ViewPortIn/ViewPortOut scaling so the full desktop content is downscaled to the capture card's resolution. No manual configuration needed.
 
 ### How do I add a monitor or change positions?
 
