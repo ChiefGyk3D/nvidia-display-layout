@@ -33,6 +33,7 @@ CAPTURE_ENABLED=false
 CAPTURE_DISPLAY=""
 CAPTURE_DISPLAY_NAME=""
 CAPTURE_MIRROR_TARGET=""
+CAPTURE_REFRESH_RATE=""
 
 echo -e "${CYAN}"
 echo "╔══════════════════════════════════════════════════════════════╗"
@@ -416,8 +417,96 @@ configure_capture() {
         read -p "Mirror target display: " mirror_choice
         CAPTURE_MIRROR_TARGET="${DISPLAY_IDS[$((mirror_choice-1))]}"
         
+        # Detect available refresh rates for the capture card at the mirror resolution
+        local mirror_res=""
+        for i in "${!DISPLAY_IDS[@]}"; do
+            if [ "${DISPLAY_IDS[$i]}" = "$CAPTURE_MIRROR_TARGET" ]; then
+                mirror_res="${DISPLAY_RESOLUTIONS[$i]}"
+                break
+            fi
+        done
+        
         echo ""
-        echo -e "${GREEN}✓ Capture card: $CAPTURE_DISPLAY mirrors $CAPTURE_MIRROR_TARGET${NC}"
+        echo -e "${BLUE}Detecting capture card refresh rates at ${mirror_res}...${NC}"
+        local cap_rates=()
+        local cap_output
+        cap_output=$(xrandr 2>/dev/null | sed -n "/^${CAPTURE_DISPLAY_NAME} connected/,/^[A-Z]/p" | head -20)
+        
+        if [ -n "$cap_output" ] && [ -n "$mirror_res" ]; then
+            local rate_line
+            rate_line=$(echo "$cap_output" | grep "^[[:space:]]*${mirror_res}" | head -1)
+            if [ -n "$rate_line" ]; then
+                while [[ "$rate_line" =~ ([0-9]+)\.[0-9]+ ]]; do
+                    cap_rates+=("${BASH_REMATCH[1]}")
+                    rate_line="${rate_line#*${BASH_REMATCH[0]}}"
+                done
+            fi
+        fi
+        
+        # Deduplicate and sort descending
+        if [ ${#cap_rates[@]} -gt 0 ]; then
+            mapfile -t cap_rates < <(printf '%s\n' "${cap_rates[@]}" | sort -rn -u)
+        fi
+        
+        if [ ${#cap_rates[@]} -gt 0 ]; then
+            echo ""
+            echo -e "${YELLOW}Capture card refresh rate${NC}"
+            echo "Available rates for ${CAPTURE_DISPLAY_NAME} at ${mirror_res}:"
+            local rate_idx=1
+            for rate in "${cap_rates[@]}"; do
+                local default_marker=""
+                if [ "$rate" = "100" ]; then
+                    default_marker=" ${GREEN}(recommended)${NC}"
+                fi
+                echo -e "  [$rate_idx] ${rate}Hz${default_marker}"
+                ((rate_idx++))
+            done
+            echo "  [$rate_idx] Enter custom rate"
+            echo ""
+            
+            # Find index of 100Hz for default
+            local default_idx=1
+            for ri in "${!cap_rates[@]}"; do
+                if [ "${cap_rates[$ri]}" = "100" ]; then
+                    default_idx=$((ri + 1))
+                    break
+                fi
+            done
+            
+            read -p "Capture refresh rate [1-${rate_idx}] (default: $default_idx for ${cap_rates[$((default_idx-1))]}Hz): " cap_rate_choice
+            cap_rate_choice=${cap_rate_choice:-$default_idx}
+            
+            if [ "$cap_rate_choice" = "$rate_idx" ]; then
+                read -p "Enter refresh rate (e.g., 120): " custom_cap_rate
+                CAPTURE_REFRESH_RATE="$custom_cap_rate"
+            else
+                CAPTURE_REFRESH_RATE="${cap_rates[$((cap_rate_choice-1))]}"
+            fi
+        else
+            echo ""
+            echo -e "${YELLOW}Could not auto-detect capture card refresh rates at ${mirror_res}.${NC}"
+            echo "Common capture card rates:"
+            echo "  [1] 60Hz"
+            echo "  [2] 100Hz"
+            echo "  [3] 120Hz"
+            echo "  [4] 144Hz"
+            echo "  [5] 240Hz"
+            echo "  [6] Enter custom rate"
+            echo ""
+            local fallback_rates=(60 100 120 144 240)
+            read -p "Capture refresh rate [1-6] (default: 2 for 100Hz): " cap_rate_choice
+            cap_rate_choice=${cap_rate_choice:-2}
+            
+            if [ "$cap_rate_choice" = "6" ]; then
+                read -p "Enter refresh rate (e.g., 120): " custom_cap_rate
+                CAPTURE_REFRESH_RATE="$custom_cap_rate"
+            else
+                CAPTURE_REFRESH_RATE="${fallback_rates[$((cap_rate_choice-1))]}"
+            fi
+        fi
+        
+        echo ""
+        echo -e "${GREEN}✓ Capture card: $CAPTURE_DISPLAY mirrors $CAPTURE_MIRROR_TARGET @ ${CAPTURE_REFRESH_RATE}Hz${NC}"
     else
         echo -e "${YELLOW}No capture card configured${NC}"
     fi
@@ -585,7 +674,11 @@ generate_metamode() {
                 
                 if [ "$capture_supports_res" = true ]; then
                     # Capture card supports the resolution natively
-                    metamode+="$CAPTURE_DISPLAY: $mirror_res $mirror_offset"
+                    local cap_res_str="$mirror_res"
+                    if [ -n "$CAPTURE_REFRESH_RATE" ]; then
+                        cap_res_str="${mirror_res}_${CAPTURE_REFRESH_RATE}"
+                    fi
+                    metamode+="$CAPTURE_DISPLAY: $cap_res_str $mirror_offset"
                 else
                     # Capture card can't do the mirror resolution — find best fallback
                     # Try common resolutions the capture card supports
@@ -683,8 +776,14 @@ EOF
         cat > "$SCREENLAYOUT_DIR/nvidia-capture.sh" << EOF
 #!/bin/bash
 # NVIDIA MetaMode with capture card enabled
-# Generated by setup-wizard.sh on $(date)
+# Generated by setup-wizard.sh on $(date)#
+# Capture card refresh rate is configurable via CAPTURE_REFRESH env var.
+# Supported rates depend on your capture card and resolution.
+# Override: CAPTURE_REFRESH=120 ~/.screenlayout/apply-layout.sh
 
+# ── Capture card refresh rate ────────────────────────────────────────
+CAPTURE_REFRESH="\${CAPTURE_REFRESH:-${CAPTURE_REFRESH_RATE}}"
+# ─────────────────────────────────────────────────────────────────────
 export DISPLAY=$display_num
 export XAUTHORITY="\$HOME/.Xauthority"
 
@@ -835,6 +934,7 @@ save_config() {
         echo "CAPTURE_ENABLED=true" >> "$config_file"
         echo "CAPTURE_DISPLAY=$CAPTURE_DISPLAY" >> "$config_file"
         echo "CAPTURE_MIRROR=$CAPTURE_MIRROR_TARGET" >> "$config_file"
+        echo "CAPTURE_REFRESH=$CAPTURE_REFRESH_RATE" >> "$config_file"
     fi
     
     echo -e "${GREEN}✓ Configuration saved to $config_file${NC}"
@@ -879,7 +979,7 @@ finalize() {
     
     if [ "$CAPTURE_ENABLED" = true ]; then
         echo -e "${YELLOW}Capture card:${NC}"
-        echo "  • $CAPTURE_DISPLAY mirrors $CAPTURE_MIRROR_TARGET"
+        echo "  • $CAPTURE_DISPLAY mirrors $CAPTURE_MIRROR_TARGET @ ${CAPTURE_REFRESH_RATE}Hz"
         echo ""
     fi
     

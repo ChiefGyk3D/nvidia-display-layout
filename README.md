@@ -8,9 +8,38 @@ A complete NVIDIA display management solution for X11 Linux desktops. Handles mu
 - **Auto-start on boot** — systemd user services apply your layout at login
 - **Hotplug detection** — daemon re-applies layout when monitors connect/disconnect
 - **Mixed refresh rate fix** — ForceFullCompositionPipeline eliminates stuttering
-- **Capture card support** — optional HDMI capture mirroring with auto-detection
+- **Capture card support** — optional HDMI capture mirroring with auto-detection and configurable refresh rate
+- **PipeWire audio integration** — automatic combined audio sink for streaming/recording setups
+- **G-Sync Compatible** — per-display VRR for non-validated monitors
 - **Browser tweaks** — hardware acceleration for Floorp/Firefox on NVIDIA
 - **Portable** — works on any NVIDIA + X11 setup, not hardcoded to one machine
+
+## Quick Start
+
+```bash
+git clone https://github.com/ChiefGyk3D/nvidia-display-layout.git
+cd nvidia-display-layout
+
+# 1. Configure display layout
+./setup-wizard.sh
+
+# 2. Install browser performance tweaks (optional but recommended)
+cd browser-tweaks
+./install-browser-tweaks.sh
+```
+
+The wizard will:
+
+1. Detect all connected displays
+2. Auto-detect available refresh rates for each
+3. Configure position, resolution, refresh rate, and rotation per display
+4. Ask whether to enable ForceFullCompositionPipeline (fixes mixed Hz stuttering)
+5. Ask whether to enable G-Sync Compatible (VRR on non-validated monitors)
+6. Optionally set up HDMI capture card mirroring (with auto-scaling if resolutions don't match)
+7. Auto-detect capture card refresh rates and let you pick one
+8. Generate personalized layout scripts
+9. Install and enable systemd services for auto-start + hotplug
+10. Apply the layout immediately
 
 ## Requirements
 
@@ -40,77 +69,43 @@ vainfo
 # Should show: "VA-API NVDEC driver" with supported codecs
 ```
 
-## Tested Hardware
-
-### Monitors
-
-| Monitor | Resolution | Refresh Rate | Notes |
-|---------|-----------|-------------|-------|
-| ASUS TUF Gaming VG27WCS | 2560x1440 | 180Hz | G-Sync Compatible, primary development monitors |
-
-### Capture Cards
-
-| Device | Supported Input | Notes |
-|--------|----------------|-------|
-| Elgato 4K Pro | 1080p, 1440p, 4K | Supports 1440p natively — no ViewPort scaling needed |
-| Elgato Cam Link 4K | 1080p, 4K | Does **not** support 1440p — use ViewPort scaling |
-
-### GPUs
-
-| GPU | Driver | Status |
-|-----|--------|--------|
-| NVIDIA GeForce RTX 5070 Ti | 590.x+ | Fully tested |
-| NVIDIA GeForce RTX series (general) | 550.x+ | Expected to work |
-
-### Distros
-
-| Distribution | Status | Notes |
-|-------------|--------|-------|
-| Ubuntu 24.04+ | Tested | `apt install nvidia-settings nvidia-vaapi-driver` |
-| Fedora 39+ | Expected | `dnf install nvidia-settings nvidia-vaapi-driver` |
-| Arch Linux | Expected | `pacman -S nvidia-settings libva-nvidia-driver` |
-
-> **Contributions welcome!** If you test on hardware not listed here, please [open an issue](https://github.com/ChiefGyk3D/nvidia-display-layout/issues) or submit a PR to update this table.
-
-## Quick Start
-
-```bash
-git clone https://github.com/ChiefGyk3D/nvidia-display-layout.git
-cd nvidia-display-layout
-
-# 1. Configure display layout
-./setup-wizard.sh
-
-# 2. Install browser performance tweaks (optional but recommended)
-cd browser-tweaks
-./install-browser-tweaks.sh
-```
-
-The wizard will:
-
-1. Detect all connected displays
-2. Auto-detect available refresh rates for each
-3. Configure position, resolution, refresh rate, and rotation per display
-4. Ask whether to enable ForceFullCompositionPipeline (fixes mixed Hz stuttering)
-5. Ask whether to enable G-Sync Compatible (VRR on non-validated monitors)
-6. Optionally set up HDMI capture card mirroring (with auto-scaling if resolutions don't match)
-7. Generate personalized layout scripts
-8. Install and enable systemd services for auto-start + hotplug
-9. Apply the layout immediately
-
-The browser tweaks installer will:
-
-1. Auto-detect Floorp/Firefox (Flatpak or native)
-2. Install optimized `user.js` settings for NVIDIA hardware acceleration
-3. Copy the NVIDIA VA-API driver to a Flatpak-accessible path (Flatpak sandboxes block `/usr`)
-4. Set Flatpak environment overrides for hardware video decoding
-5. Restart your browser to apply
-
 ## How It Works
 
-### Display Layout
+### Project Structure
 
-The wizard generates MetaMode scripts tailored to your hardware:
+```
+nvidia-display-layout/
+├── setup-wizard.sh              # Interactive configuration wizard
+├── nvidia-display-setup.sh      # Quick apply / status / setup launcher
+├── display-status.sh            # Status checker and action menu
+├── install-hotplug.sh           # Install hotplug detection (monitor or udev)
+├── remove-hotplug.sh            # Uninstall hotplug detection
+├── README.md
+│
+├── browser-tweaks/
+│   ├── install-browser-tweaks.sh  # Auto-detect and install browser tweaks
+│   ├── launch-floorp.sh           # Floorp launcher with NVIDIA env vars
+│   ├── launch-firefox.sh          # Firefox launcher with NVIDIA env vars
+│   └── user.js                    # Firefox/Floorp performance settings
+│
+├── .screenlayout/                 # Example/template layout scripts
+│   ├── apply-layout.sh            # Smart selector (capture card detection)
+│   ├── display-monitor.sh         # Hotplug polling daemon
+│   ├── hotplug-handler.sh         # udev event handler
+│   ├── nvidia-base.sh             # Base layout example
+│   └── nvidia-capture.sh          # Capture card layout example
+│
+├── .config/systemd/user/
+│   ├── apply-display-layout.service     # Login layout service
+│   └── nvidia-display-monitor.service   # Hotplug monitor service
+│
+└── udev/
+    └── 99-nvidia-display-hotplug.rules  # udev rules (alternative to monitor)
+```
+
+### Installed Files
+
+The wizard generates scripts tailored to your hardware and installs them to `$HOME`:
 
 ```
 $HOME/.screenlayout/
@@ -151,20 +146,20 @@ For a one-shot application of ForceFullCompositionPipeline without running the w
 ./nvidia-display-setup.sh
 ```
 
-This reads your current MetaMode and adds FFCP to every display. Useful for quick fixes or testing. It also supports:
+This reads your current MetaMode and adds FFCP to every display. It also supports:
 
 ```bash
 ./nvidia-display-setup.sh --status  # Show displays, MetaMode, service status
 ./nvidia-display-setup.sh --setup   # Launch the full setup wizard
 ```
 
-If the wizard has already been run, `nvidia-display-setup.sh` delegates to the installed `~/.screenlayout/apply-layout.sh` automatically.
+If the wizard has already been run, `nvidia-display-setup.sh` delegates to `~/.screenlayout/apply-layout.sh` automatically.
 
-## Mixed Refresh Rate Monitors
+## Display Configuration
+
+### Mixed Refresh Rate Fix (ForceFullCompositionPipeline)
 
 If your monitors have different refresh rates (e.g., 144Hz + 75Hz + 60Hz), NVIDIA's compositor tries to sync them together, causing stuttering, frame drops, and jank when moving windows between monitors.
-
-### The Fix: ForceFullCompositionPipeline
 
 The setup wizard adds `{ForceFullCompositionPipeline=On}` to each display's MetaMode and pins the exact refresh rate:
 
@@ -183,9 +178,23 @@ The wizard auto-detects refresh rates via `nvidia-settings` and `xrandr`, or let
 | Smooth scrolling in browsers | Slightly higher GPU usage |
 | No more frame drops between monitors | |
 
-Capture cards don't need FFCP since they just receive a mirror signal.
+### G-Sync Compatible (VRR)
 
-## HDMI Capture Card
+G-Sync Compatible allows Variable Refresh Rate (VRR, also known as FreeSync/Adaptive Sync) on monitors that aren't on NVIDIA's validated G-Sync list. This reduces tearing without the latency cost of traditional VSync.
+
+The wizard adds `AllowGSYNCCompatible=On` to each display's MetaMode options. This is set **per-display**, so you can enable it only on monitors that support it and skip it on those that don't (e.g., capture cards or older monitors).
+
+**Requirements:** NVIDIA driver 550.x+, monitor with FreeSync/Adaptive Sync, DisplayPort connection (HDMI VRR support varies by driver version).
+
+**Verify G-Sync is active:**
+
+```bash
+nvidia-settings -q CurrentMetaMode | grep AllowGSYNCCompatible
+# Or use the status tool:
+./display-status.sh
+```
+
+### HDMI Capture Card
 
 The project detects whether your capture card is connected and automatically picks the right layout:
 
@@ -196,11 +205,32 @@ If your capture card supports the mirror display's native resolution (e.g., Elga
 
 This happens automatically at boot and whenever the hotplug daemon detects a change. No manual switching needed.
 
-## PipeWire Combined Audio Sink Integration (Optional)
+#### Capture Card Refresh Rate
+
+The setup wizard auto-detects available refresh rates for your capture card at the chosen mirror resolution and lets you pick one interactively. The selected rate is saved to `nvidia-capture.sh` as a configurable default.
+
+> **Important:** Not all rates are available at all resolutions. For example, the Elgato 4K Pro supports 100/120/144/240Hz at 1440p but **not** 60Hz at that resolution (60Hz is only available at 4K and 1080p).
+
+**Change the default** by editing the `CAPTURE_REFRESH` line in `~/.screenlayout/nvidia-capture.sh`:
+
+```bash
+CAPTURE_REFRESH="${CAPTURE_REFRESH:-100}"  # Change 100 to your desired rate
+```
+
+**Override on the fly** without editing any files:
+
+```bash
+CAPTURE_REFRESH=144 ~/.screenlayout/apply-layout.sh
+```
+
+| Capture Card | 1440p Rates | 4K Rates | 1080p Rates |
+|-------------|------------|---------|------------|
+| Elgato 4K Pro | 240, 144, 120, 100 | 144, 120, 100, 60 | 240, 120, 60 |
+| Elgato Cam Link 4K | N/A (use ViewPort) | 30 | 60 |
+
+### PipeWire Combined Audio Sink (Optional)
 
 If you use a capture card for streaming or recording (e.g., a 2PC setup), you likely want audio to play through **both** your local speakers/headphones **and** the HDMI output to the capture card simultaneously. The [PipeWire Combined Audio Output](https://github.com/ChiefGyk3D/pipewire_sink) project handles exactly this.
-
-### How It Works
 
 When `apply-layout.sh` detects your capture card is connected, it automatically:
 
@@ -211,84 +241,25 @@ When `apply-layout.sh` detects your capture card is connected, it automatically:
 
 When the capture card is **not** connected, none of the audio integration runs — your audio stays on its normal default output.
 
-This triggers both:
-- **At startup** — via the `nvidia-display-monitor.service` or `apply-display-layout.service`
-- **On hotplug** — when the display monitor daemon detects the capture card was plugged in
-
-### Setup
-
-1. **Install the PipeWire combined sink project:**
-
-   ```bash
-   git clone https://github.com/ChiefGyk3D/pipewire_sink.git
-   cd pipewire_sink
-   ./install.sh
-   ```
-
-   This installs `reset-pipewire` to `~/.local/bin/`.
-
-2. **That's it.** The `apply-layout.sh` script automatically detects `~/.local/bin/reset-pipewire` and calls it when a capture card is found. No additional configuration needed.
-
-### Disabling Audio Integration
-
-If you have `reset-pipewire` installed but don't want automatic audio resets on display changes:
+**Setup:**
 
 ```bash
-# Set the environment variable before launching, or edit apply-layout.sh:
+git clone https://github.com/ChiefGyk3D/pipewire_sink.git
+cd pipewire_sink
+./install.sh
+```
+
+That's it — `apply-layout.sh` automatically detects `~/.local/bin/reset-pipewire` and calls it when a capture card is found.
+
+**Disable audio integration** if you have `reset-pipewire` installed but don't want it:
+
+```bash
 RESET_PIPEWIRE_BIN=none ~/.screenlayout/apply-layout.sh
 ```
 
-Or edit `~/.screenlayout/apply-layout.sh` and set:
+Or set `RESET_PIPEWIRE_BIN="none"` in `~/.screenlayout/apply-layout.sh`.
 
-```bash
-RESET_PIPEWIRE_BIN="none"
-```
-
-### Logs
-
-Audio reset output is logged alongside the display layout changes. Check:
-
-```bash
-# Display monitor log (includes PipeWire reset output)
-cat /tmp/nvidia-display-monitor.log
-```
-
-Lines prefixed with `[pipewire]` are from the audio reset.
-
-## G-Sync Compatible (VRR)
-
-G-Sync Compatible allows Variable Refresh Rate (VRR, also known as FreeSync/Adaptive Sync) on monitors that aren't on NVIDIA's validated G-Sync list. This reduces tearing without the latency cost of traditional VSync.
-
-### How It Works
-
-The wizard adds `AllowGSYNCCompatible=On` to each display's MetaMode options. This is set **per-display**, so you can enable it only on monitors that support it and skip it on those that don't (e.g., capture cards or older monitors).
-
-### Requirements
-
-- NVIDIA driver 550.x or newer
-- Monitor with FreeSync / Adaptive Sync support
-- DisplayPort connection (HDMI VRR support varies by driver version)
-- X11 (Wayland handles VRR differently)
-
-### Verify G-Sync is Active
-
-```bash
-# Check global settings
-nvidia-settings -q AllowGSYNC
-nvidia-settings -q AllowVRR
-
-# Check per-display in the current MetaMode
-nvidia-settings -q CurrentMetaMode | grep AllowGSYNCCompatible
-
-# Or use the status tool
-./display-status.sh
-```
-
-### Troubleshooting VRR
-
-- **Not activating?** Make sure you're on DisplayPort, not HDMI. Some HDMI connections don't support VRR with NVIDIA drivers.
-- **Flickering at low frame rates?** Some monitors flicker near their VRR floor. This is a monitor limitation, not a driver bug.
-- **Compositor conflicts:** Desktop compositors (Picom, Compton) may interfere with VRR. KWin and Mutter generally work fine.
+**Logs:** Check `/tmp/nvidia-display-monitor.log` — lines prefixed with `[pipewire]` are from the audio reset.
 
 ## Browser Performance Tweaks (Floorp/Firefox)
 
@@ -303,7 +274,12 @@ cd browser-tweaks
 
 This automatically detects your browser (Floorp/Firefox, Flatpak/Native) and installs:
 
-#### user.js Settings
+1. Optimized `user.js` settings for NVIDIA hardware acceleration
+2. VA-API driver copy for Flatpak sandboxes (Flatpak blocks `/usr/lib`)
+3. Flatpak environment overrides for hardware video decoding
+4. Restarts your browser to apply
+
+#### What It Configures
 
 | Category | What it does |
 |----------|-------------|
@@ -327,7 +303,7 @@ This automatically detects your browser (Floorp/Firefox, Flatpak/Native) and ins
 
 ### Browser Launchers
 
-Dedicated launcher scripts set all NVIDIA environment variables before launching the browser. Use these as custom launchers instead of the default desktop shortcuts:
+Dedicated launcher scripts set all NVIDIA environment variables before launching the browser:
 
 ```bash
 browser-tweaks/launch-floorp.sh    # Floorp (Flatpak)
@@ -342,11 +318,12 @@ For native (non-Flatpak) installs, the `user.js` tweaks handle everything — no
 2. Check: **Compositing: WebRender**, **WebRender: force-enabled**
 3. Play a YouTube video → right-click → **Stats for nerds** → dropped frames should stay very low
 
-### Manual In-Browser Setup (about:config)
+### Manual about:config Reference
 
-The `user.js` file handles everything automatically on startup. However, if you prefer to set things manually, or need to verify/adjust settings in a running browser, open `about:config` and search for these keys:
+The `user.js` file handles everything automatically. If you need to verify or adjust settings manually, expand the sections below.
 
-#### Required for Hardware Acceleration
+<details>
+<summary><strong>Hardware Acceleration Settings</strong></summary>
 
 | Setting | Value | What it does |
 |---------|-------|-------------|
@@ -359,7 +336,10 @@ The `user.js` file handles everything automatically on startup. However, if you 
 | `gfx.x11-egl.force-enabled` | `true` | Use EGL instead of GLX (NVIDIA) |
 | `widget.dmabuf.force-enabled` | `true` | DMA-BUF for zero-copy texture sharing |
 
-#### Required for NVIDIA Video Decoding (NVDEC)
+</details>
+
+<details>
+<summary><strong>NVIDIA Video Decoding (NVDEC) Settings</strong></summary>
 
 | Setting | Value | What it does |
 |---------|-------|-------------|
@@ -372,22 +352,12 @@ The `user.js` file handles everything automatically on startup. However, if you 
 | `media.av1.enabled` | `true` | Enable AV1 codec |
 | `media.mediasource.vp9.enabled` | `true` | VP9 via MediaSource |
 
-**Prerequisite:** Install `nvidia-vaapi-driver` for VA-API support:
+**Prerequisite:** `nvidia-vaapi-driver` — see [Install Prerequisites](#install-prerequisites).
 
-```bash
-# Fedora
-sudo dnf install nvidia-vaapi-driver
+</details>
 
-# Ubuntu/Debian
-sudo apt install nvidia-vaapi-driver
-
-# Arch
-sudo pacman -S libva-nvidia-driver
-```
-
-Verify it's working: `vainfo` should show NVIDIA as the driver.
-
-#### Mixed Refresh Rate / Multi-Monitor
+<details>
+<summary><strong>Mixed Refresh Rate / Multi-Monitor Settings</strong></summary>
 
 | Setting | Value | What it does |
 |---------|-------|-------------|
@@ -398,72 +368,40 @@ Verify it's working: `vainfo` should show NVIDIA as the driver.
 | `widget.wayland.vsync.enabled` | `false` | Disable Wayland vsync (X11 setups) |
 | `gfx.webrender.all.async-scene-builder` | `true` | Async scene building for multi-monitor |
 
-> **Note:** Change `gfx.display.max-frame-rate` to match your highest refresh rate monitor. If your fastest monitor is 165Hz, set it to `165`.
+> **Note:** Change `gfx.display.max-frame-rate` to match your highest refresh rate monitor.
 
-#### Smooth Scrolling
+</details>
+
+<details>
+<summary><strong>Smooth Scrolling &amp; Performance Settings</strong></summary>
 
 | Setting | Value | What it does |
 |---------|-------|-------------|
 | `general.smoothScroll` | `true` | Enable smooth scrolling |
 | `general.smoothScroll.msdPhysics.enabled` | `true` | Physics-based scrolling |
 | `apz.frame_delay.enabled` | `false` | Reduce input-to-paint delay |
-
-#### Performance Tuning
-
-| Setting | Value | What it does |
-|---------|-------|-------------|
 | `dom.ipc.processCount` | `8` | Content processes (8 for 16GB+ RAM, lower for less) |
 | `browser.cache.memory.capacity` | `524288` | 512MB memory cache |
 | `nglayout.initialpaint.delay` | `0` | No delay before first paint |
 | `browser.sessionstore.interval` | `30000` | Save session every 30s instead of 15s |
 | `toolkit.telemetry.enabled` | `false` | Disable telemetry (reduces background CPU) |
 
+</details>
+
 ### Additional Browser Steps
 
-After installing the tweaks (`user.js` or manual `about:config`), you may also need to:
+After installing tweaks, you may also need to:
 
 1. **Restart the browser completely** — close all windows, not just reload
 2. **Check `about:support` → Graphics** — verify WebRender is active
-3. **Enable hardware acceleration in settings** (if disabled):
-   - Firefox: Settings → General → Performance → uncheck "Use recommended performance settings" → check "Use hardware acceleration when available"
-   - Floorp: Same location, same settings
-4. **For Flatpak installs**, the launcher scripts or `install-browser-tweaks.sh` set the needed environment variables. If you launched from the desktop shortcut instead, the env vars won't be set — use the launcher scripts or run `install-browser-tweaks.sh` which applies Flatpak overrides permanently.
+3. **Enable hardware acceleration in settings** (if disabled): Settings → General → Performance → uncheck "Use recommended performance settings" → check "Use hardware acceleration when available"
+4. **Flatpak users:** Use the launcher scripts or run `install-browser-tweaks.sh` which applies Flatpak overrides permanently
 
-## Project Structure
+## Maintenance
 
-```
-nvidia-display-layout/
-├── setup-wizard.sh              # Interactive configuration wizard
-├── nvidia-display-setup.sh      # Quick apply / status / setup launcher
-├── display-status.sh            # Status checker and action menu
-├── install-hotplug.sh           # Install hotplug detection (monitor or udev)
-├── remove-hotplug.sh            # Uninstall hotplug detection
-├── README.md
-│
-├── browser-tweaks/
-│   ├── install-browser-tweaks.sh  # Auto-detect and install browser tweaks
-│   ├── launch-floorp.sh           # Floorp launcher with NVIDIA env vars
-│   ├── launch-firefox.sh          # Firefox launcher with NVIDIA env vars
-│   └── user.js                    # Firefox/Floorp performance settings (same file works for both)
-│
-├── .screenlayout/                 # Example/template layout scripts
-│   ├── apply-layout.sh            # Smart selector (capture card detection)
-│   ├── display-monitor.sh         # Hotplug polling daemon
-│   ├── hotplug-handler.sh         # udev event handler
-│   ├── nvidia-base.sh             # Base layout example
-│   └── nvidia-capture.sh          # Capture card layout example
-│
-├── .config/systemd/user/
-│   ├── apply-display-layout.service     # Login layout service
-│   └── nvidia-display-monitor.service   # Hotplug monitor service
-│
-└── udev/
-    └── 99-nvidia-display-hotplug.rules  # udev rules (alternative to monitor)
-```
+### Reconfiguring
 
-## Reconfiguring
-
-When you change your monitor setup, just re-run the wizard:
+When you change your monitor setup, re-run the wizard:
 
 ```bash
 ./setup-wizard.sh
@@ -477,9 +415,23 @@ Or use the status tool for a quick overview and actions:
 
 Your previous configuration is preserved in `~/.screenlayout/.layout-config` until the wizard overwrites it.
 
-### Backup & Restore
+### Updating
 
-Before making changes, you can back up your entire layout configuration:
+```bash
+cd nvidia-display-layout
+git pull
+
+# Re-run if scripts changed
+./setup-wizard.sh
+
+# Re-install browser tweaks if user.js changed
+cd browser-tweaks
+./install-browser-tweaks.sh
+```
+
+Your display configuration (`~/.screenlayout/.layout-config`) is separate from the repo, so `git pull` won't overwrite your settings.
+
+### Backup & Restore
 
 ```bash
 # Backup
@@ -495,36 +447,7 @@ systemctl --user daemon-reload
 ~/.screenlayout/apply-layout.sh
 ```
 
-The key files to preserve:
-
-| File | What it stores |
-|------|---------------|
-| `~/.screenlayout/.layout-config` | Display IDs, resolutions, refresh rates, positions, options |
-| `~/.screenlayout/nvidia-base.sh` | Base layout MetaMode command |
-| `~/.screenlayout/nvidia-capture.sh` | Capture card layout MetaMode command |
-| `~/.screenlayout/apply-layout.sh` | Capture card detection logic |
-
-## Updating
-
-To pull the latest fixes and improvements:
-
-```bash
-cd nvidia-display-layout
-git pull
-
-# Re-run the wizard if scripts changed
-./setup-wizard.sh
-
-# Re-install browser tweaks if user.js changed
-cd browser-tweaks
-./install-browser-tweaks.sh
-```
-
-Your display configuration (`~/.screenlayout/.layout-config`) is separate from the repo, so `git pull` won't overwrite your settings. However, if the wizard or browser scripts have been updated, you should re-run them to get the latest fixes.
-
-## Uninstalling
-
-To completely remove the toolkit:
+### Uninstalling
 
 ```bash
 # 1. Stop and disable services
@@ -539,30 +462,20 @@ systemctl --user daemon-reload
 
 # 3. Remove hotplug (if installed)
 ./remove-hotplug.sh
-# For udev rules (requires sudo):
-sudo rm -f /etc/udev/rules.d/99-nvidia-display-hotplug.rules
-sudo udevadm control --reload-rules
 
 # 4. Remove browser tweaks (optional)
-# Delete user.js from your browser profile:
-# Floorp Flatpak:
 rm -f ~/.var/app/one.ablaze.floorp/.floorp/*/user.js
-# Firefox Flatpak:
 rm -f ~/.var/app/org.mozilla.firefox/.mozilla/firefox/*/user.js
-# Native Firefox:
 rm -f ~/.mozilla/firefox/*/user.js
-# Remove Flatpak overrides:
-flatpak override --user --reset one.ablaze.floorp
-flatpak override --user --reset org.mozilla.firefox
-# Remove copied VA-API driver:
+flatpak override --user --reset one.ablaze.floorp 2>/dev/null
+flatpak override --user --reset org.mozilla.firefox 2>/dev/null
 rm -f ~/.local/lib/dri/nvidia_drv_video.so
 
 # 5. Remove the repo
-cd ..
-rm -rf nvidia-display-layout
+cd .. && rm -rf nvidia-display-layout
 ```
 
-After uninstalling, NVIDIA will revert to its default display behavior. ForceFullCompositionPipeline and G-Sync Compatible settings are only active while the layout scripts apply them — they don't persist in the driver permanently.
+After uninstalling, NVIDIA reverts to its default display behavior. FFCP and G-Sync Compatible settings don't persist in the driver permanently.
 
 ## MetaMode Reference
 
@@ -598,31 +511,47 @@ The refresh rate suffix (e.g., `_144`) is optional. If omitted, the driver picks
 
 **Mixed refresh rate + capture card:**
 ```
-[Left: 1920x1080 @ 144Hz] [Center: 1920x1080 @ 144Hz] [Right: 1920x1080 @ 75Hz Portrait]
-                                    + HDMI Capture Card @ 60Hz (mirrors center)
+[Left: 2560x1440 @ 180Hz] [Center: 2560x1440 @ 180Hz] [Right: 1080x1920 @ 75Hz Portrait]
+                                    + HDMI Capture Card @ 100Hz (mirrors center at 1440p)
 ```
 
-## Known Limitations
+## Tested Hardware
 
-| Limitation | Details |
-|-----------|--------|
-| **X11 only** | This toolkit uses NVIDIA MetaModes and `nvidia-settings`, which are X11-specific. Wayland uses a completely different display protocol and is not supported. |
-| **NVIDIA proprietary driver only** | Nouveau (open-source) doesn't support MetaModes, ForceFullCompositionPipeline, or NVDEC hardware decode. |
-| **No per-window refresh rate** | X11 + NVIDIA applies one composition rate globally. FFCP mitigates this but individual windows can't run at different Hz. |
-| **Capture card resolution limits** | Some USB capture cards (e.g., Cam Link 4K) don't support 1440p input — the toolkit auto-scales with ViewPort. Newer cards like the Elgato 4K Pro handle 1440p natively with no scaling needed. |
-| **udev hotplug unreliable** | NVIDIA proprietary drivers often don't emit kernel hotplug events. Use the polling monitor service instead (the default). |
-| **~1 frame input latency** | ForceFullCompositionPipeline adds approximately 1 frame of input latency. Competitive gamers may want to disable it on their primary gaming monitor. |
-| **Flatpak VA-API workaround** | Flatpak sandboxes block `/usr/lib` paths. The installer copies `nvidia_drv_video.so` to `~/.local/lib/dri/`. After NVIDIA driver updates, re-run `install-browser-tweaks.sh` to refresh the copy. |
+### Monitors
+
+| Monitor | Resolution | Refresh Rate | Notes |
+|---------|-----------|-------------|-------|
+| ASUS TUF Gaming VG27WCS | 2560x1440 | 180Hz | G-Sync Compatible, primary development monitors |
+
+### Capture Cards
+
+| Device | Supported Input | Notes |
+|--------|----------------|-------|
+| Elgato 4K Pro | 1080p, 1440p, 4K | Supports 1440p natively — no ViewPort scaling needed |
+| Elgato Cam Link 4K | 1080p, 4K | Does **not** support 1440p — use ViewPort scaling |
+
+### GPUs
+
+| GPU | Driver | Status |
+|-----|--------|--------|
+| NVIDIA GeForce RTX 5070 Ti | 590.x+ | Fully tested |
+| NVIDIA GeForce RTX series (general) | 550.x+ | Expected to work |
+
+### Distros
+
+| Distribution | Status | Notes |
+|-------------|--------|-------|
+| Ubuntu 24.04+ | Tested | `apt install nvidia-settings nvidia-vaapi-driver` |
+| Fedora 39+ | Expected | `dnf install nvidia-settings nvidia-vaapi-driver` |
+| Arch Linux | Expected | `pacman -S nvidia-settings libva-nvidia-driver` |
+
+> **Contributions welcome!** If you test on hardware not listed here, please [open an issue](https://github.com/ChiefGyk3D/nvidia-display-layout/issues) or submit a PR to update this table.
 
 ## Troubleshooting
 
 ### Layout resets after sleep/wake
 
-```bash
-~/.screenlayout/apply-layout.sh
-```
-
-Or restart the monitor service which will re-apply automatically.
+Run `~/.screenlayout/apply-layout.sh` or restart the monitor service which will re-apply automatically.
 
 ### MetaMode shows `source=RandR`
 
@@ -630,22 +559,7 @@ Something is overwriting NVIDIA settings. Check for GNOME display configuration 
 
 ### Hotplug not detecting changes
 
-Check the monitor daemon log:
-
-```bash
-cat /tmp/nvidia-display-monitor.log
-```
-
-The polling-based monitor service (recommended) is more reliable than udev rules with NVIDIA proprietary drivers.
-
-### Browser still dropping frames
-
-1. Verify FFCP: `nvidia-settings -q CurrentMetaMode | grep ForceFullCompositionPipeline`
-2. Check `about:support` → Graphics → Compositing should say WebRender
-3. Verify VA-API: `vainfo` (requires `nvidia-vaapi-driver`)
-4. Check GPU decode is active: `nvidia-smi pmon -c 5` — the `dec` column should show usage during video playback
-5. Restart browser after installing tweaks
-6. **Flatpak users:** Run `install-browser-tweaks.sh` — it copies the VA-API driver to `~/.local/lib/dri/` because Flatpak blocks `/usr` paths inside the sandbox. Without this, hardware video decode silently falls back to software.
+Check `/tmp/nvidia-display-monitor.log`. The polling-based monitor service (recommended) is more reliable than udev rules with NVIDIA proprietary drivers.
 
 ### Capture card silently not working
 
@@ -654,102 +568,66 @@ Capture cards that don't support the source display's resolution are silently dr
 - `nvidia-settings -q dpys` shows the capture card as connected but `nvidia-settings -q CurrentMetaMode` doesn't include it
 - The capture card shows no signal or a black screen
 
-**Fix:** If your capture card supports the mirror resolution natively (e.g., Elgato 4K Pro at 1440p), output directly:
+The setup wizard detects this automatically. For manual configuration, see [HDMI Capture Card](#hdmi-capture-card).
 
-```
-DPY-0: 2560x1440 +2560+240
-```
+### Browser still dropping frames
 
-If your capture card only supports 1080p (e.g., Cam Link 4K), use ViewPort scaling:
-
-```
-DPY-0: 1920x1080 +2560+240 {ViewPortIn=2560x1440, ViewPortOut=1920x1080+0+0}
-```
-
-The setup wizard detects this automatically and configures the correct mode.
+1. Verify FFCP: `nvidia-settings -q CurrentMetaMode | grep ForceFullCompositionPipeline`
+2. Check `about:support` → Graphics → Compositing should say WebRender
+3. Verify VA-API: `vainfo` (requires `nvidia-vaapi-driver`)
+4. Check GPU decode: `nvidia-smi pmon -c 5` — the `dec` column should show usage during video playback
+5. Restart browser after installing tweaks
+6. **Flatpak users:** Run `install-browser-tweaks.sh` to copy the VA-API driver to `~/.local/lib/dri/`
 
 ### VA-API not working after driver update
 
-If hardware video decoding stops after updating your NVIDIA driver:
-
-```bash
-# Re-run the browser tweaks installer to refresh the driver copy
-cd browser-tweaks
-./install-browser-tweaks.sh
-
-# Verify
-vainfo
-```
-
-The Flatpak workaround copies `nvidia_drv_video.so` to `~/.local/lib/dri/`. Driver updates replace the system copy but not the user copy.
+Re-run `install-browser-tweaks.sh` to refresh the driver copy, then verify with `vainfo`.
 
 ### Frames drop when opening new browser windows
 
-If playing a video on one monitor drops frames when you open a new browser window:
-
-1. Verify shader pre-caching is enabled in `about:config`:
-   - `gfx.webrender.program-binary-disk-cache` = `true`
-   - `gfx.webrender.precache-shaders` = `true`
-2. Check GPU process stability:
-   - `layers.gpu-process.max_restarts` = `0`
+1. Verify shader pre-caching in `about:config`: `gfx.webrender.program-binary-disk-cache` and `gfx.webrender.precache-shaders` = `true`
+2. Check GPU process stability: `layers.gpu-process.max_restarts` = `0`
 3. Re-run `install-browser-tweaks.sh` — the latest `user.js` includes these fixes
+
+### VRR not activating
+
+- Make sure you're on DisplayPort, not HDMI. Some HDMI connections don't support VRR with NVIDIA drivers.
+- Desktop compositors (Picom, Compton) may interfere. KWin and Mutter generally work fine.
+- Flickering at low frame rates is a monitor limitation, not a driver bug.
 
 ## FAQ
 
 ### Does this work on Wayland?
 
-No. This toolkit is X11-only. NVIDIA MetaModes, `nvidia-settings`, and ForceFullCompositionPipeline are X11 concepts. On Wayland, display management is handled by the compositor (GNOME/KDE/Sway) and mixed refresh rate support works differently.
+No. This toolkit is X11-only. On Wayland, display management is handled by the compositor (GNOME/KDE/Sway) and mixed refresh rate support works differently.
 
 ### Does this work with AMD or Intel GPUs?
 
-No. Everything here is NVIDIA-specific: MetaModes, NVDEC, nvidia-vaapi-driver, ForceFullCompositionPipeline. AMD/Intel GPUs use different drivers and tools.
+No. Everything here is NVIDIA-specific: MetaModes, NVDEC, nvidia-vaapi-driver, ForceFullCompositionPipeline.
 
 ### Do I need to re-run the wizard after every reboot?
 
-No. The wizard installs systemd user services that automatically apply your layout on login and watch for display changes. You only need to re-run the wizard when you physically change your monitor setup.
+No. The systemd user services apply your layout automatically on login and watch for display changes. Re-run the wizard only when you physically change your monitor setup.
 
 ### Can I use this with a desktop environment's display settings?
 
-It's not recommended. GNOME Display Settings, KDE Display Configuration, and similar tools use xrandr or Wayland APIs which can conflict with NVIDIA MetaModes. If you use this toolkit, let it handle display configuration exclusively.
-
-### My capture card doesn't support my monitor's resolution
-
-The wizard handles this automatically. If the capture card supports the resolution natively (e.g., Elgato 4K Pro at 1440p), it outputs directly. If there's a mismatch (e.g., Cam Link 4K mirroring a 1440p display), it configures ViewPortIn/ViewPortOut scaling so the full desktop content is downscaled to the capture card's resolution. No manual configuration needed.
-
-### How do I add a monitor or change positions?
-
-Re-run the wizard:
-
-```bash
-./setup-wizard.sh
-```
-
-It will detect all currently connected displays and let you reconfigure everything. Your old layout stays in `~/.screenlayout/.layout-config` as a reference.
-
-### Is there any input lag?
-
-ForceFullCompositionPipeline adds approximately 1 frame of input latency (~5-7ms at 144Hz). This is negligible for desktop use and video playback. For competitive gaming, you can disable FFCP on your gaming monitor while keeping it on other monitors — the wizard lets you choose per-display.
+Not recommended. GNOME Display Settings, KDE Display Configuration, and similar tools use xrandr or Wayland APIs which conflict with NVIDIA MetaModes. Let this toolkit handle display configuration exclusively.
 
 ### Why not just use xrandr?
 
-While xrandr works for basic display configuration, NVIDIA MetaModes offer features that xrandr can't:
+NVIDIA MetaModes offer features xrandr can't: ForceFullCompositionPipeline, AllowGSYNCCompatible, ViewPortIn/ViewPortOut scaling, and reliably pinned refresh rates. Using xrandr alongside MetaModes can cause conflicts.
 
-- ForceFullCompositionPipeline (mixed refresh rate fix)
-- AllowGSYNCCompatible (VRR)
-- ViewPortIn/ViewPortOut (hardware scaling)
-- Pinned refresh rates (xrandr sometimes picks wrong rates)
+## Known Limitations
 
-Using xrandr alongside MetaModes can cause conflicts. This toolkit uses MetaModes exclusively for consistency.
-
-## Design Principles
-
-| Principle | Why |
-|-----------|-----|
-| NVIDIA MetaModes only | Native driver control, no xrandr conflicts |
-| No GNOME Displays | Avoids config state conflicts |
-| Deterministic | Same result every boot |
-| User services | No root needed for daily operation |
-| Portable | Works on any NVIDIA + X11 machine |
+| Limitation | Details |
+|-----------|--------|
+| **X11 only** | NVIDIA MetaModes and `nvidia-settings` are X11-specific. Wayland is not supported. |
+| **NVIDIA proprietary driver only** | Nouveau doesn't support MetaModes, FFCP, or NVDEC. |
+| **No per-window refresh rate** | X11 + NVIDIA applies one composition rate globally. FFCP mitigates this. |
+| **Capture card resolution limits** | Some capture cards don't support all resolutions — the wizard auto-detects and applies ViewPort scaling when needed. |
+| **udev hotplug unreliable** | NVIDIA drivers often don't emit kernel hotplug events. Use the polling monitor service instead (the default). |
+| **~1 frame input latency** | FFCP adds ~1 frame of latency. Disable per-display in the wizard for competitive gaming. |
+| **Flatpak VA-API workaround** | Flatpak sandboxes block `/usr/lib`. Run `install-browser-tweaks.sh` to copy `nvidia_drv_video.so` to `~/.local/lib/dri/`. Re-run after driver updates. |
 
 ## Contributing
 
