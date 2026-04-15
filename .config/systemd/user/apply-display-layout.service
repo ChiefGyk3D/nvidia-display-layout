@@ -4,9 +4,18 @@ After=graphical-session.target
 
 [Service]
 Type=oneshot
-ExecStart=%h/.screenlayout/apply-layout.sh
-# Delay slightly to ensure X session is fully ready
-ExecStartPre=/bin/sleep 2
+Environment=DISPLAY=:1
+Environment=XAUTHORITY=%h/.Xauthority
+# Retry up to 10 times with 2s delay — X may not be ready immediately at login
+ExecStart=/bin/bash -c '\
+  for i in $(seq 1 10); do \
+    if nvidia-settings -q CurrentMetaMode >/dev/null 2>&1; then \
+      exec %h/.screenlayout/apply-layout.sh; \
+    fi; \
+    sleep 2; \
+  done; \
+  echo "ERROR: X display not ready after 20s"; exit 1'
+TimeoutStartSec=30
 
 [Install]
 WantedBy=default.target

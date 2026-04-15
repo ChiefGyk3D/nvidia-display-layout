@@ -214,7 +214,7 @@ The setup wizard auto-detects available refresh rates for your capture card at t
 **Change the default** by editing the `CAPTURE_REFRESH` line in `~/.screenlayout/nvidia-capture.sh`:
 
 ```bash
-CAPTURE_REFRESH="${CAPTURE_REFRESH:-100}"  # Change 100 to your desired rate
+CAPTURE_REFRESH="${CAPTURE_REFRESH:-120}"  # Change 120 to your desired rate
 ```
 
 **Override on the fly** without editing any files:
@@ -222,6 +222,45 @@ CAPTURE_REFRESH="${CAPTURE_REFRESH:-100}"  # Change 100 to your desired rate
 ```bash
 CAPTURE_REFRESH=144 ~/.screenlayout/apply-layout.sh
 ```
+
+#### HDMI Deep Color and Bandwidth
+
+Many capture cards (including the Elgato 4K Pro) advertise HDMI deep color support (10/12-bit) in their EDID. The NVIDIA X11 driver auto-negotiates 10bpc (30-bit color), which increases TMDS bandwidth by 25%. At 1440p this means:
+
+| Refresh Rate | Pixel Clock | @10bpc TMDS | @8bpc TMDS | HDMI 2.0 (600 MHz) |
+|---|---|---|---|---|
+| 100Hz | 407 MHz | 509 MHz ✓ | 407 MHz ✓ | Fits both |
+| 120Hz | 498 MHz | **622 MHz ✗** | 498 MHz ✓ | **8bpc only** |
+| 144Hz | 596 MHz | **744 MHz ✗** | 596 MHz ✓ | **8bpc only** |
+
+#### Why not HDMI 2.1 FRL?
+
+HDMI 2.1 introduced **FRL (Fixed Rate Link)** which supports up to 48 Gbps — more than enough for 10bpc at any refresh rate. Both the RTX 5070 Ti and Elgato 4K Pro support FRL (up to 40 Gbps per the EDID). However, **NVIDIA's proprietary X11 driver does not negotiate FRL** — it falls back to legacy TMDS signaling, which is capped at 600 MHz (18 Gbps). This is an X11 driver limitation, not a hardware one.
+
+On Wayland, the DRM/KMS path handles HDMI link negotiation directly and supports FRL. See [Roadmap](#roadmap) for planned Wayland support.
+
+#### 8bpc vs 10bpc for Streaming
+
+For streaming and recording through a capture card, **8bpc has zero visual impact**:
+
+- **Twitch** encodes at 8-bit regardless of input — 10bpc is downsampled before transmission
+- **YouTube** accepts 10-bit VP9/AV1 uploads but OBS x264/NVENC typically outputs 8-bit; even if you encode 10-bit, YouTube re-encodes to 8-bit for most viewers
+- **OBS recording** in x264/NVENC uses 8-bit by default; 10-bit recording requires explicit HEVC/AV1 10-bit profile configuration and increases file size ~20% with no visible difference at typical streaming bitrates
+- **The capture card itself** converts the HDMI input to USB/PCIe video frames — your OBS source is the capture device, not the raw HDMI signal
+
+The only scenario where 10bpc matters is HDR content viewed directly on a monitor. For a capture card feeding OBS at 1080p output, the extra 2 bits per channel are discarded before they reach your audience.
+
+#### Custom EDID Override
+
+To run 120Hz+ at 1440p on X11, deep color must be disabled on the capture card output. This project includes a **custom EDID** with deep color flags stripped, applied via `CustomEDID` in xorg.conf targeting only the capture card (`DFP-0`). All other displays are unaffected.
+
+**Files involved:**
+- `/etc/X11/edid/elgato-4k-pro-no-deepcolor.bin` — modified EDID (deep color flags removed)
+- `/etc/X11/edid/elgato-4k-pro-original.bin` — backup of original EDID
+- `/etc/X11/xorg.conf` — `CustomEDID` option in Device section
+- `patch-xorg-edid.path` / `patch-xorg-edid.service` — systemd watcher that re-adds the option if system76-power overwrites xorg.conf
+
+**To revert** (go back to 10bpc, max 100Hz at 1440p): remove the `CustomEDID` line from `/etc/X11/xorg.conf` and restart X.
 
 | Capture Card | 1440p Rates | 4K Rates | 1080p Rates |
 |-------------|------------|---------|------------|
@@ -599,7 +638,7 @@ Re-run `install-browser-tweaks.sh` to refresh the driver copy, then verify with 
 
 ### Does this work on Wayland?
 
-No. This toolkit is X11-only. On Wayland, display management is handled by the compositor (GNOME/KDE/Sway) and mixed refresh rate support works differently.
+Not yet. The current version is X11-only (MetaModes, `nvidia-settings`, `ForceFullCompositionPipeline`). Wayland support using COSMIC/`cosmic-randr` is planned for the Pop!_OS 26.04 upgrade — see [Roadmap](#roadmap). On Wayland, HDMI 2.1 FRL should work out of the box, eliminating the need for the custom EDID deep color workaround.
 
 ### Does this work with AMD or Intel GPUs?
 
@@ -621,13 +660,33 @@ NVIDIA MetaModes offer features xrandr can't: ForceFullCompositionPipeline, Allo
 
 | Limitation | Details |
 |-----------|--------|
-| **X11 only** | NVIDIA MetaModes and `nvidia-settings` are X11-specific. Wayland is not supported. |
+| **X11 only (Wayland planned)** | NVIDIA MetaModes and `nvidia-settings` are X11-specific. Wayland support via COSMIC is on the [Roadmap](#roadmap). |
 | **NVIDIA proprietary driver only** | Nouveau doesn't support MetaModes, FFCP, or NVDEC. |
 | **No per-window refresh rate** | X11 + NVIDIA applies one composition rate globally. FFCP mitigates this. |
 | **Capture card resolution limits** | Some capture cards don't support all resolutions — the wizard auto-detects and applies ViewPort scaling when needed. |
 | **udev hotplug unreliable** | NVIDIA drivers often don't emit kernel hotplug events. Use the polling monitor service instead (the default). |
 | **~1 frame input latency** | FFCP adds ~1 frame of latency. Disable per-display in the wizard for competitive gaming. |
 | **Flatpak VA-API workaround** | Flatpak sandboxes block `/usr/lib`. Run `install-browser-tweaks.sh` to copy `nvidia_drv_video.so` to `~/.local/lib/dri/`. Re-run after driver updates. |
+
+## Roadmap
+
+### Wayland / COSMIC Support (Pop!_OS 26.04)
+
+The project will add a **Wayland backend** alongside the existing X11 backend when upgrading to Pop!_OS 26.04 (COSMIC desktop). Both will live in the same repository:
+
+| Feature | X11 (current) | Wayland (planned) |
+|---|---|---|
+| Display layout | `nvidia-settings` MetaModes | `cosmic-randr` / COSMIC settings API |
+| Mixed refresh rate fix | `ForceFullCompositionPipeline` | Native compositor support |
+| G-Sync / VRR | `AllowGSYNCCompatible` in MetaMode | DRM/KMS properties |
+| Custom EDID | `CustomEDID` in xorg.conf | `drm.edid_firmware=` kernel param (or not needed — FRL fixes bandwidth) |
+| Hotplug detection | Polling via `nvidia-settings` | Native DRM hotplug events |
+| HDMI deep color | 8bpc EDID workaround (TMDS limit) | Not needed — HDMI 2.1 FRL supports 10bpc at 120Hz+ natively |
+| PipeWire audio | Combined sink via `reset-pipewire` | Same (no changes needed) |
+
+**What carries over unchanged:** PipeWire combined audio sink, capture card auto-detection logic, setup wizard UX flow, systemd service architecture.
+
+**What gets rewritten:** Display layout scripts, configuration backend, refresh rate detection, display property queries.
 
 ## Contributing
 

@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 - Elgato 4K Pro capture card support — outputs at native 1440p without ViewPort scaling
+- Custom EDID override to disable HDMI deep color (10bpc) on the capture card output, enabling 120Hz at 1440p (8bpc stays within TMDS 600 MHz limit)
+- systemd path watcher (`patch-xorg-edid.path`) to re-add CustomEDID if system76-power overwrites xorg.conf
+- Configurable capture card refresh rate (default 120Hz, evenly divides to 30/60 fps)
 - Shader pre-caching settings (`gfx.webrender.program-binary-disk-cache`, `gfx.webrender.precache-shaders`) to eliminate frame drops when opening new browser windows
 - GPU process stability settings (`layers.gpu-process.force-enabled`, `max_restarts=0`) to prevent frame hitches
 - WebRender worker thread tuning (`gfx.webrender.worker-count=4`) for parallel scene building across multiple windows

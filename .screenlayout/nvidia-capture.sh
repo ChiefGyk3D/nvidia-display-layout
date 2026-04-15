@@ -7,8 +7,10 @@
 # ── Capture card refresh rate ────────────────────────────────────────
 # Elgato 4K Pro supported rates at 1440p: 240, 144, 120, 100
 # (60Hz is NOT available at 1440p — only at 4K and 1080p)
+# 120Hz requires CustomEDID with deep color disabled (see xorg.conf)
+# Without the EDID override, max stable rate is 100Hz (10bpc default)
 # Change this value to switch capture refresh rate
-CAPTURE_REFRESH="${CAPTURE_REFRESH:-100}"
+CAPTURE_REFRESH="${CAPTURE_REFRESH:-120}"
 # ─────────────────────────────────────────────────────────────────────
 
 export DISPLAY=:1
