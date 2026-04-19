@@ -2,12 +2,19 @@
 # NVIDIA Display Monitor Daemon
 # Polls for display changes and applies layout when detected
 # More reliable than udev for NVIDIA proprietary drivers
+#
+# Monitors TWO things:
+#   1. Display connection changes (hotplug: capture card added/removed)
+#   2. MetaMode changes (HDMI renegotiation, compositor reset, system76-power)
+# This catches both "new display connected" AND "same displays, wrong mode"
 
 SCREENLAYOUT_DIR="$HOME/.screenlayout"
 LOGFILE="/tmp/nvidia-display-monitor.log"
 STATEFILE="/tmp/nvidia-display-state"
 POLL_INTERVAL=3  # seconds between checks
 MAX_STARTUP_WAIT=60  # max seconds to wait for X at startup
+VERIFY_DELAY=5  # seconds to wait before post-apply verification
+VERIFY_ATTEMPTS=3  # number of times to verify layout stuck
 
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOGFILE"
@@ -45,7 +52,15 @@ find_display() {
 }
 
 get_display_state() {
-    nvidia-settings -q dpys 2>/dev/null | grep -E "(DPY-[0-9]+|connected|enabled)" | md5sum | cut -d' ' -f1
+    # Hash both connection status AND current MetaMode
+    # This catches:
+    #   - Display connect/disconnect (hotplug)
+    #   - Mode resets (HDMI renegotiation, compositor, system76-power)
+    #   - Resolution/position/refresh changes
+    {
+        nvidia-settings -q dpys 2>/dev/null | grep -E "(DPY-[0-9]+|connected|enabled)"
+        nvidia-settings -t -q CurrentMetaMode 2>/dev/null
+    } | md5sum | cut -d' ' -f1
 }
 
 # Wait for X to be fully available at startup
@@ -99,6 +114,10 @@ main() {
         log "Applying initial layout..."
         "$SCREENLAYOUT_DIR/apply-layout.sh" >> "$LOGFILE" 2>&1
         log "Initial layout applied"
+        # Update state after apply (MetaMode changed)
+        LAST_STATE=$(get_display_state)
+        echo "$LAST_STATE" > "$STATEFILE"
+        log "Post-apply state: $LAST_STATE"
     fi
 
     # Monitor loop
@@ -127,21 +146,32 @@ main() {
             log "Waiting for display handshake..."
             sleep 3
             
-            # Apply layout, then re-check and re-apply if state changed during handshake
+            # Apply layout with verification loop
+            # HDMI renegotiation can reset the MetaMode after we apply it,
+            # so we verify the mode stuck and re-apply if needed
             if [ -x "$SCREENLAYOUT_DIR/apply-layout.sh" ]; then
                 "$SCREENLAYOUT_DIR/apply-layout.sh" >> "$LOGFILE" 2>&1
-                log "Layout applied (first pass)"
+                log "Layout applied (pass 1)"
+                local expected_state=$(get_display_state)
                 
-                # Wait and check if HDMI became ready after initial apply
-                sleep 2
-                local post_state=$(get_display_state)
-                if [ "$post_state" != "$CURRENT_STATE" ]; then
-                    log "State changed during handshake, re-applying..."
-                    sleep 1
+                # Verify the layout stuck — HDMI handshake can reset it
+                for attempt in $(seq 1 $VERIFY_ATTEMPTS); do
+                    sleep "$VERIFY_DELAY"
+                    local verify_state=$(get_display_state)
+                    
+                    if [ "$verify_state" = "$expected_state" ]; then
+                        log "Layout verified stable (attempt $attempt)"
+                        CURRENT_STATE="$verify_state"
+                        break
+                    fi
+                    
+                    log "Layout drifted after apply (attempt $attempt/$VERIFY_ATTEMPTS), re-applying..."
+                    sleep 2  # extra settle time before re-apply
                     "$SCREENLAYOUT_DIR/apply-layout.sh" >> "$LOGFILE" 2>&1
-                    log "Layout applied (second pass)"
-                    CURRENT_STATE="$post_state"
-                fi
+                    log "Layout applied (pass $((attempt + 1)))"
+                    expected_state=$(get_display_state)
+                    CURRENT_STATE="$expected_state"
+                done
             fi
             
             LAST_STATE="$CURRENT_STATE"
