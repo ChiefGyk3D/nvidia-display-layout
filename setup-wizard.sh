@@ -826,9 +826,16 @@ export XAUTHORITY="\$HOME/.Xauthority"
 NVIDIA_AUDIO_CARD="${nvidia_audio_card}"
 HDMI_PROFILE="output:hdmi-stereo"
 
-# Optional: Path to reset-pipewire script (installed by pipewire_sink project)
-# Set to empty string or "none" to disable audio integration
-RESET_PIPEWIRE_BIN="\${RESET_PIPEWIRE_BIN:-\$HOME/.local/bin/reset-pipewire}"
+# Path to pipewire-ensure-defaults (installed by pipewire_sink project).
+# Set to empty string or "none" to disable audio integration.
+#
+# NOTE: earlier versions called reset-pipewire here, restarting the entire
+# audio stack on EVERY display event (HDMI handshake, MetaMode drift, monitor
+# sleep). That killed all app audio streams and could crash PipeWire. The
+# combined sink is now created declaratively by PipeWire itself
+# (~/.config/pipewire/pipewire.conf.d/60-combined-sink.conf) and reattaches
+# the HDMI sink automatically — no restart is ever needed from here.
+PIPEWIRE_ENSURE_DEFAULTS="\${PIPEWIRE_ENSURE_DEFAULTS:-\$HOME/.local/bin/pipewire-ensure-defaults}"
 
 # Check if capture card is connected (with or without enabled)
 if nvidia-settings -q dpys | grep -q "${capture_name}) (connected"; then
@@ -843,13 +850,9 @@ if nvidia-settings -q dpys | grep -q "${capture_name}) (connected"; then
         pactl set-card-profile "\$NVIDIA_AUDIO_CARD" "\$HDMI_PROFILE" 2>/dev/null
     fi
 
-    # Reset PipeWire and create combined audio sink (speakers + HDMI capture)
-    # This ensures audio routes to both the local output and capture card
-    if [ -n "\$RESET_PIPEWIRE_BIN" ] && [ "\$RESET_PIPEWIRE_BIN" != "none" ] && [ -x "\$RESET_PIPEWIRE_BIN" ]; then
-        echo "\$(date '+%Y-%m-%d %H:%M:%S') - Capture card detected, resetting PipeWire combined sink..."
-        # Additional delay for HDMI audio device to fully register with PipeWire
-        sleep 3
-        "\$RESET_PIPEWIRE_BIN" 2>&1 | while IFS= read -r line; do
+    # Re-assert audio defaults (combined sink is declarative — NO restart)
+    if [ -n "\$PIPEWIRE_ENSURE_DEFAULTS" ] && [ "\$PIPEWIRE_ENSURE_DEFAULTS" != "none" ] && [ -x "\$PIPEWIRE_ENSURE_DEFAULTS" ]; then
+        "\$PIPEWIRE_ENSURE_DEFAULTS" 2>&1 | while IFS= read -r line; do
             echo "\$(date '+%Y-%m-%d %H:%M:%S') - [pipewire] \$line"
         done
     fi
@@ -1024,9 +1027,13 @@ finalize() {
         echo "  https://github.com/ChiefGyk3D/pipewire_sink"
         echo ""
         
-        if [ -x "$HOME/.local/bin/reset-pipewire" ]; then
-            echo -e "${GREEN}✓ reset-pipewire is already installed at ~/.local/bin/reset-pipewire${NC}"
+        if [ -x "$HOME/.local/bin/pipewire-ensure-defaults" ]; then
+            echo -e "${GREEN}✓ pipewire-ensure-defaults is installed at ~/.local/bin/pipewire-ensure-defaults${NC}"
             echo "  Audio integration is enabled automatically — no action needed."
+        elif [ -x "$HOME/.local/bin/reset-pipewire" ]; then
+            echo -e "${YELLOW}⚠ Old pipewire_sink install detected (reset-pipewire only).${NC}"
+            echo "  Re-run pipewire_sink's install.sh to get the non-disruptive"
+            echo "  integration (pipewire-ensure-defaults + declarative combined sink)."
         else
             read -p "Install PipeWire combined sink project now? [Y/n]: " install_pipewire
             if [[ ! "$install_pipewire" =~ ^[Nn] ]]; then
@@ -1042,10 +1049,11 @@ finalize() {
                     (cd "$pipewire_tmp" && ./install.sh)
                     rm -rf "$pipewire_tmp"
                     
-                    if [ -x "$HOME/.local/bin/reset-pipewire" ]; then
+                    if [ -x "$HOME/.local/bin/pipewire-ensure-defaults" ]; then
                         echo ""
                         echo -e "${GREEN}✓ PipeWire integration is now active${NC}"
-                        echo "  Combined sink will be created automatically when capture card is detected."
+                        echo "  The combined sink is created by PipeWire itself and reattaches"
+                        echo "  the capture card automatically — no audio restarts on hotplug."
                     fi
                 else
                     echo -e "${RED}✗ Failed to clone pipewire_sink — install it manually later${NC}"
@@ -1059,7 +1067,7 @@ finalize() {
         fi
         echo ""
         echo "To disable audio integration, edit ~/.screenlayout/apply-layout.sh and set:"
-        echo "  RESET_PIPEWIRE_BIN=\"none\""
+        echo "  PIPEWIRE_ENSURE_DEFAULTS=\"none\""
     fi
     
     echo ""

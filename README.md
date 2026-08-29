@@ -271,14 +271,18 @@ To run 120Hz+ at 1440p on X11, deep color must be disabled on the capture card o
 
 If you use a capture card for streaming or recording (e.g., a 2PC setup), you likely want audio to play through **both** your local speakers/headphones **and** the HDMI output to the capture card simultaneously. The [PipeWire Combined Audio Output](https://github.com/ChiefGyk3D/pipewire_sink) project handles exactly this.
 
+The combined sink itself is created **declaratively by PipeWire** (pipewire_sink v2 installs `~/.config/pipewire/pipewire.conf.d/60-combined-sink.conf`), so it exists from the moment PipeWire starts and reattaches the capture card's HDMI sink automatically whenever it disappears and returns. Display events never restart the audio stack.
+
 When `apply-layout.sh` detects your capture card is connected, it automatically:
 
 1. Applies the NVIDIA display layout with the capture card mirror
 2. Waits for the HDMI audio handshake to complete
 3. Forces the NVIDIA HDMI audio profile active
-4. Calls `reset-pipewire` to create a combined audio sink (speakers + HDMI capture)
+4. Calls `pipewire-ensure-defaults` to re-assert the default sink/source and volumes (non-disruptive — running audio streams are untouched)
 
 When the capture card is **not** connected, none of the audio integration runs — your audio stays on its normal default output.
+
+> **Upgrading from an older install?** Earlier versions called `reset-pipewire` here, which fully restarted PipeWire on every display event — disconnecting every application's audio (frozen browser tabs) and occasionally crashing PipeWire. Re-run `setup-wizard.sh` (or pipewire_sink's `install.sh`) to regenerate `apply-layout.sh` with the non-disruptive integration.
 
 **Setup:**
 
@@ -288,17 +292,17 @@ cd pipewire_sink
 ./install.sh
 ```
 
-That's it — `apply-layout.sh` automatically detects `~/.local/bin/reset-pipewire` and calls it when a capture card is found.
+That's it — `apply-layout.sh` automatically detects `~/.local/bin/pipewire-ensure-defaults` and calls it when a capture card is found.
 
-**Disable audio integration** if you have `reset-pipewire` installed but don't want it:
+**Disable audio integration** if you have pipewire_sink installed but don't want it:
 
 ```bash
-RESET_PIPEWIRE_BIN=none ~/.screenlayout/apply-layout.sh
+PIPEWIRE_ENSURE_DEFAULTS=none ~/.screenlayout/apply-layout.sh
 ```
 
-Or set `RESET_PIPEWIRE_BIN="none"` in `~/.screenlayout/apply-layout.sh`.
+Or set `PIPEWIRE_ENSURE_DEFAULTS="none"` in `~/.screenlayout/apply-layout.sh`.
 
-**Logs:** Check `/tmp/nvidia-display-monitor.log` — lines prefixed with `[pipewire]` are from the audio reset.
+**Logs:** Check `/tmp/nvidia-display-monitor.log` — lines prefixed with `[pipewire]` are from the audio defaults pass.
 
 ## Browser Performance Tweaks (Floorp/Firefox)
 
@@ -682,7 +686,7 @@ The project will add a **Wayland backend** alongside the existing X11 backend wh
 | Custom EDID | `CustomEDID` in xorg.conf | `drm.edid_firmware=` kernel param (or not needed — FRL fixes bandwidth) |
 | Hotplug detection | Polling via `nvidia-settings` | Native DRM hotplug events |
 | HDMI deep color | 8bpc EDID workaround (TMDS limit) | Not needed — HDMI 2.1 FRL supports 10bpc at 120Hz+ natively |
-| PipeWire audio | Combined sink via `reset-pipewire` | Same (no changes needed) |
+| PipeWire audio | Declarative combined sink + `pipewire-ensure-defaults` | Same (no changes needed) |
 
 **What carries over unchanged:** PipeWire combined audio sink, capture card auto-detection logic, setup wizard UX flow, systemd service architecture.
 

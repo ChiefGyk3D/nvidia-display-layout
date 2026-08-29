@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed
+- **Audio integration no longer restarts PipeWire.** `apply-layout.sh` used to
+  run `reset-pipewire` (a full pipewire/wireplumber/pipewire-pulse restart) on
+  every display event — HDMI re-handshakes, MetaMode drift, and monitor sleep
+  all disconnected every application's audio streams (frozen browser tabs) and
+  could race PipeWire 1.0.x into a segfault. The combined sink is now created
+  declaratively by PipeWire itself (pipewire_sink v2's `60-combined-sink.conf`)
+  and reattaches the HDMI sink automatically; the generated `apply-layout.sh`
+  only re-asserts the HDMI card profile and calls the non-disruptive
+  `pipewire-ensure-defaults`. Re-run `setup-wizard.sh` (or the pipewire_sink
+  installer) to upgrade an existing `~/.screenlayout/apply-layout.sh`.
+
 ### Added
 - Elgato 4K Pro capture card support — outputs at native 1440p without ViewPort scaling
 - Custom EDID override to disable HDMI deep color (10bpc) on the capture card output, enabling 120Hz at 1440p (8bpc stays within TMDS 600 MHz limit)
