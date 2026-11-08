@@ -151,7 +151,7 @@ case "$action" in
             echo "No log file found"
         fi
         ;;
-    5|"")
+    5 | "")
         echo "Bye!"
         ;;
     *)

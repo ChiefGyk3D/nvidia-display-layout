@@ -11,13 +11,13 @@
 SCREENLAYOUT_DIR="$HOME/.screenlayout"
 LOGFILE="/tmp/nvidia-display-monitor.log"
 STATEFILE="/tmp/nvidia-display-state"
-POLL_INTERVAL=3  # seconds between checks
-MAX_STARTUP_WAIT=60  # max seconds to wait for X at startup
-VERIFY_DELAY=5  # seconds to wait before post-apply verification
-VERIFY_ATTEMPTS=3  # number of times to verify layout stuck
+POLL_INTERVAL=3     # seconds between checks
+MAX_STARTUP_WAIT=60 # max seconds to wait for X at startup
+VERIFY_DELAY=5      # seconds to wait before post-apply verification
+VERIFY_ATTEMPTS=3   # number of times to verify layout stuck
 
 log() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOGFILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >>"$LOGFILE"
 }
 
 # Find X display - try multiple methods
@@ -29,7 +29,7 @@ find_display() {
             return 0
         fi
     fi
-    
+
     # Method 2: Try common display numbers
     for disp in :0 :1 :2; do
         if xdpyinfo -display "$disp" &>/dev/null 2>&1; then
@@ -37,7 +37,7 @@ find_display() {
             return 0
         fi
     done
-    
+
     # Method 3: Check loginctl for graphical sessions
     if command -v loginctl &>/dev/null; then
         local session_display
@@ -47,7 +47,7 @@ find_display() {
             return 0
         fi
     fi
-    
+
     return 1
 }
 
@@ -67,23 +67,23 @@ get_display_state() {
 wait_for_x() {
     local waited=0
     log "Waiting for X display..."
-    
+
     while [ $waited -lt $MAX_STARTUP_WAIT ]; do
         if DISPLAY=$(find_display); then
             export DISPLAY
             export XAUTHORITY="$HOME/.Xauthority"
-            
+
             # Verify nvidia-settings works
             if nvidia-settings -q dpys &>/dev/null 2>&1; then
                 log "X display ready: $DISPLAY (waited ${waited}s)"
                 return 0
             fi
         fi
-        
+
         sleep 2
         waited=$((waited + 2))
     done
-    
+
     log "ERROR: Timeout waiting for X display after ${MAX_STARTUP_WAIT}s"
     return 1
 }
@@ -91,14 +91,14 @@ wait_for_x() {
 # Main
 main() {
     # Clear old log on fresh start
-    echo "" > "$LOGFILE"
-    
+    echo "" >"$LOGFILE"
+
     # Wait for X at startup
     if ! wait_for_x; then
         echo "Failed to find X display. Exiting."
         exit 1
     fi
-    
+
     log "Display monitor started (DISPLAY=$DISPLAY, PID=$$)"
     echo "NVIDIA Display Monitor running (PID $$)"
     echo "Polling every ${POLL_INTERVAL}s for display changes..."
@@ -106,24 +106,24 @@ main() {
 
     # Get initial state
     LAST_STATE=$(get_display_state)
-    echo "$LAST_STATE" > "$STATEFILE"
+    echo "$LAST_STATE" >"$STATEFILE"
     log "Initial state: $LAST_STATE"
 
     # Apply layout at startup
     if [ -x "$SCREENLAYOUT_DIR/apply-layout.sh" ]; then
         log "Applying initial layout..."
-        "$SCREENLAYOUT_DIR/apply-layout.sh" >> "$LOGFILE" 2>&1
+        "$SCREENLAYOUT_DIR/apply-layout.sh" >>"$LOGFILE" 2>&1
         log "Initial layout applied"
         # Update state after apply (MetaMode changed)
         LAST_STATE=$(get_display_state)
-        echo "$LAST_STATE" > "$STATEFILE"
+        echo "$LAST_STATE" >"$STATEFILE"
         log "Post-apply state: $LAST_STATE"
     fi
 
     # Monitor loop
     while true; do
         sleep "$POLL_INTERVAL"
-        
+
         # Re-verify display is still valid
         if ! xdpyinfo -display "$DISPLAY" &>/dev/null 2>&1; then
             log "WARNING: Lost X display, attempting to reconnect..."
@@ -135,47 +135,47 @@ main() {
                 continue
             fi
         fi
-        
+
         CURRENT_STATE=$(get_display_state)
-        
+
         if [ "$CURRENT_STATE" != "$LAST_STATE" ]; then
             log "Display change detected! Old: $LAST_STATE New: $CURRENT_STATE"
             echo "$(date): Display change detected, applying layout..."
-            
+
             # Wait for HDMI handshake to complete (capture cards can be slow)
             log "Waiting for display handshake..."
             sleep 3
-            
+
             # Apply layout with verification loop
             # HDMI renegotiation can reset the MetaMode after we apply it,
             # so we verify the mode stuck and re-apply if needed
             if [ -x "$SCREENLAYOUT_DIR/apply-layout.sh" ]; then
-                "$SCREENLAYOUT_DIR/apply-layout.sh" >> "$LOGFILE" 2>&1
+                "$SCREENLAYOUT_DIR/apply-layout.sh" >>"$LOGFILE" 2>&1
                 log "Layout applied (pass 1)"
                 local expected_state=$(get_display_state)
-                
+
                 # Verify the layout stuck — HDMI handshake can reset it
                 for attempt in $(seq 1 $VERIFY_ATTEMPTS); do
                     sleep "$VERIFY_DELAY"
                     local verify_state=$(get_display_state)
-                    
+
                     if [ "$verify_state" = "$expected_state" ]; then
                         log "Layout verified stable (attempt $attempt)"
                         CURRENT_STATE="$verify_state"
                         break
                     fi
-                    
+
                     log "Layout drifted after apply (attempt $attempt/$VERIFY_ATTEMPTS), re-applying..."
-                    sleep 2  # extra settle time before re-apply
-                    "$SCREENLAYOUT_DIR/apply-layout.sh" >> "$LOGFILE" 2>&1
+                    sleep 2 # extra settle time before re-apply
+                    "$SCREENLAYOUT_DIR/apply-layout.sh" >>"$LOGFILE" 2>&1
                     log "Layout applied (pass $((attempt + 1)))"
                     expected_state=$(get_display_state)
                     CURRENT_STATE="$expected_state"
                 done
             fi
-            
+
             LAST_STATE="$CURRENT_STATE"
-            echo "$LAST_STATE" > "$STATEFILE"
+            echo "$LAST_STATE" >"$STATEFILE"
         fi
     done
 }

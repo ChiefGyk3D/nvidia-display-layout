@@ -47,8 +47,8 @@ if [ -d "$HOME/.mozilla/firefox" ]; then
     echo -e "${GREEN}✓ Found: Firefox (Native)${NC}"
 fi
 
-if [ "$FLOORP_FLATPAK" = false ] && [ "$FLOORP_NATIVE" = false ] && \
-   [ "$FIREFOX_FLATPAK" = false ] && [ "$FIREFOX_NATIVE" = false ]; then
+if [ "$FLOORP_FLATPAK" = false ] && [ "$FLOORP_NATIVE" = false ] &&
+    [ "$FIREFOX_FLATPAK" = false ] && [ "$FIREFOX_NATIVE" = false ]; then
     echo -e "${RED}No supported browser found!${NC}"
     echo "Supported: Floorp (Flatpak/Native), Firefox (Flatpak/Native)"
     exit 1
@@ -61,7 +61,7 @@ echo ""
 find_profile_dir() {
     local base_dir="$1"
     local profile_dir=""
-    
+
     # Use profiles.ini to find the install default (most reliable)
     if [ -f "$base_dir/profiles.ini" ]; then
         # Get the Default= path from the [Install*] section
@@ -71,24 +71,24 @@ find_profile_dir() {
             profile_dir="$base_dir/$install_default"
         fi
     fi
-    
+
     # Fallback: look for default-release profile
     if [ -z "$profile_dir" ]; then
         profile_dir=$(find "$base_dir" -maxdepth 1 -type d -name "*.default-release*" 2>/dev/null | head -1)
     fi
-    
+
     # Fallback: any default profile
     if [ -z "$profile_dir" ]; then
         profile_dir=$(find "$base_dir" -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -1)
     fi
-    
+
     echo "$profile_dir"
 }
 
 # Function to find ALL profile directories (for installing to all profiles)
 find_all_profile_dirs() {
     local base_dir="$1"
-    
+
     if [ -f "$base_dir/profiles.ini" ]; then
         # Extract all Path= values from profiles.ini
         grep "^Path=" "$base_dir/profiles.ini" | cut -d= -f2 | while read -r rel_path; do
@@ -106,7 +106,7 @@ find_all_profile_dirs() {
 install_userjs() {
     local profile_dir="$1"
     local browser_name="$2"
-    
+
     if [ -n "$profile_dir" ] && [ -d "$profile_dir" ]; then
         cp "$SCRIPT_DIR/user.js" "$profile_dir/"
         echo -e "${GREEN}✓ Installed user.js to ${browser_name}: $(basename "$profile_dir")${NC}"
@@ -120,13 +120,13 @@ install_userjs_all_profiles() {
     local base_dir="$1"
     local browser_name="$2"
     local count=0
-    
+
     while IFS= read -r profile_dir; do
         if install_userjs "$profile_dir" "$browser_name"; then
             ((count++))
         fi
     done < <(find_all_profile_dirs "$base_dir")
-    
+
     if [ "$count" -eq 0 ]; then
         # Fallback to single profile detection
         local single_profile
@@ -139,17 +139,17 @@ install_userjs_all_profiles() {
 install_flatpak_env() {
     local app_id="$1"
     local browser_name="$2"
-    
+
     # Flatpak reserves /usr — we can't share host /usr paths into the sandbox.
     # Copy the NVIDIA VA-API driver to a user-accessible location instead.
     local host_vaapi_path="/usr/lib/x86_64-linux-gnu/dri"
     if [ -f "/usr/lib64/dri/nvidia_drv_video.so" ]; then
-        host_vaapi_path="/usr/lib64/dri"  # Fedora/RHEL
+        host_vaapi_path="/usr/lib64/dri" # Fedora/RHEL
     fi
-    
+
     local user_vaapi_path="$HOME/.local/lib/dri"
     mkdir -p "$user_vaapi_path"
-    
+
     if [ -f "${host_vaapi_path}/nvidia_drv_video.so" ]; then
         cp "${host_vaapi_path}/nvidia_drv_video.so" "$user_vaapi_path/"
         echo -e "${GREEN}✓ Copied nvidia_drv_video.so to ${user_vaapi_path}${NC}"
@@ -171,7 +171,7 @@ install_flatpak_env() {
         --env=__GL_YIELD=USLEEP \
         --env=MOZ_USE_XINPUT2=1 \
         "$app_id"
-    
+
     echo -e "${GREEN}✓ Set Flatpak environment variables for $browser_name${NC}"
     echo -e "  VA-API driver path: ${user_vaapi_path}"
 }
