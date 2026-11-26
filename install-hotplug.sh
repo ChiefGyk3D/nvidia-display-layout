@@ -37,11 +37,11 @@ if [ "$choice" = "1" ]; then
     # Install monitor service (no root needed)
     echo ""
     echo -e "${YELLOW}Installing Display Monitor Service...${NC}"
-    
+
     # Copy monitor script
     MONITOR_SRC="$SCRIPT_DIR/.screenlayout/display-monitor.sh"
     MONITOR_DST="$HOME/.screenlayout/display-monitor.sh"
-    
+
     if [ -f "$MONITOR_SRC" ]; then
         cp "$MONITOR_SRC" "$MONITOR_DST"
         chmod +x "$MONITOR_DST"
@@ -50,11 +50,11 @@ if [ "$choice" = "1" ]; then
         echo -e "${RED}Error: display-monitor.sh not found${NC}"
         exit 1
     fi
-    
+
     # Copy systemd service
     SERVICE_SRC="$SCRIPT_DIR/.config/systemd/user/nvidia-display-monitor.service"
     SERVICE_DST="$HOME/.config/systemd/user/nvidia-display-monitor.service"
-    
+
     mkdir -p "$HOME/.config/systemd/user"
     if [ -f "$SERVICE_SRC" ]; then
         cp "$SERVICE_SRC" "$SERVICE_DST"
@@ -63,14 +63,14 @@ if [ "$choice" = "1" ]; then
         echo -e "${RED}Error: service file not found${NC}"
         exit 1
     fi
-    
+
     # Enable and start service
     systemctl --user daemon-reload
     systemctl --user enable nvidia-display-monitor.service
     systemctl --user start nvidia-display-monitor.service
-    
+
     echo -e "${GREEN}✓ Service enabled and started${NC}"
-    
+
     echo ""
     echo -e "${GREEN}════════════════════════════════════════════════════════════${NC}"
     echo -e "${GREEN}           Display Monitor installed successfully!          ${NC}"
@@ -83,7 +83,7 @@ if [ "$choice" = "1" ]; then
     echo "  Logs:    cat /tmp/nvidia-display-monitor.log"
     echo "  Stop:    systemctl --user stop nvidia-display-monitor"
     echo "  Disable: systemctl --user disable nvidia-display-monitor"
-    
+
 elif [ "$choice" = "2" ]; then
     # Install udev rules (needs root)
     if [ "$EUID" -ne 0 ]; then
@@ -91,7 +91,7 @@ elif [ "$choice" = "2" ]; then
         echo "Usage: sudo $0"
         exit 1
     fi
-    
+
     # Get the actual user
     if [ -n "$SUDO_USER" ]; then
         ACTUAL_USER="$SUDO_USER"
@@ -100,15 +100,15 @@ elif [ "$choice" = "2" ]; then
         echo -e "${RED}Error: Could not determine the actual user${NC}"
         exit 1
     fi
-    
+
     echo ""
     echo -e "${YELLOW}Installing udev rules...${NC}"
     echo "User: $ACTUAL_USER"
-    
+
     # Install hotplug handler
     HANDLER_SRC="$SCRIPT_DIR/.screenlayout/hotplug-handler.sh"
     HANDLER_DST="$ACTUAL_HOME/.screenlayout/hotplug-handler.sh"
-    
+
     if [ -f "$HANDLER_SRC" ]; then
         cp "$HANDLER_SRC" "$HANDLER_DST"
         chown "$ACTUAL_USER:$ACTUAL_USER" "$HANDLER_DST"
@@ -118,24 +118,24 @@ elif [ "$choice" = "2" ]; then
         echo -e "${RED}Error: hotplug-handler.sh not found${NC}"
         exit 1
     fi
-    
+
     # Install udev rule
     UDEV_SRC="$SCRIPT_DIR/udev/99-nvidia-display-hotplug.rules"
     UDEV_DST="/etc/udev/rules.d/99-nvidia-display-hotplug.rules"
-    
+
     if [ -f "$UDEV_SRC" ]; then
-        sed "s/USERNAME/$ACTUAL_USER/g" "$UDEV_SRC" > "$UDEV_DST"
+        sed "s/USERNAME/$ACTUAL_USER/g" "$UDEV_SRC" >"$UDEV_DST"
         chmod 644 "$UDEV_DST"
         echo -e "${GREEN}✓ Installed udev rule${NC}"
     else
         echo -e "${RED}Error: udev rule not found${NC}"
         exit 1
     fi
-    
+
     udevadm control --reload-rules
     udevadm trigger
     echo -e "${GREEN}✓ udev rules reloaded${NC}"
-    
+
     echo ""
     echo -e "${YELLOW}⚠ WARNING: udev hotplug often doesn't work with NVIDIA drivers${NC}"
     echo -e "${YELLOW}  If it doesn't work, run this script again and choose option 1${NC}"

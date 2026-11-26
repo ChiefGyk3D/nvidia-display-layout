@@ -45,20 +45,20 @@ echo -e "${NC}"
 # Check requirements
 check_requirements() {
     echo -e "${BLUE}Checking requirements...${NC}"
-    
-    if ! command -v nvidia-settings &> /dev/null; then
+
+    if ! command -v nvidia-settings &>/dev/null; then
         echo -e "${RED}Error: nvidia-settings not found. Please install NVIDIA drivers.${NC}"
         exit 1
     fi
-    
+
     if [ -z "$DISPLAY" ]; then
         export DISPLAY=:0
     fi
-    
+
     if [ -z "$XAUTHORITY" ]; then
         export XAUTHORITY="$HOME/.Xauthority"
     fi
-    
+
     echo -e "${GREEN}✓ nvidia-settings found${NC}"
     echo -e "${GREEN}✓ DISPLAY=$DISPLAY${NC}"
     echo ""
@@ -68,14 +68,14 @@ check_requirements() {
 detect_displays() {
     echo -e "${BLUE}Detecting connected displays...${NC}"
     echo ""
-    
+
     # Get display info from nvidia-settings
     local dpys_output
     dpys_output=$(nvidia-settings -q dpys 2>/dev/null) || {
         echo -e "${RED}Error: Could not query displays. Is X11 running?${NC}"
         exit 1
     }
-    
+
     # Parse connected displays
     local count=0
     while IFS= read -r line; do
@@ -83,7 +83,7 @@ detect_displays() {
             local idx="${BASH_REMATCH[1]}"
             local name="${BASH_REMATCH[2]}"
             local dpy="${BASH_REMATCH[3]}"
-            
+
             # Check if connected
             if echo "$dpys_output" | grep -A5 "$dpy" | grep -q "connected"; then
                 DISPLAY_IDS+=("$dpy")
@@ -92,13 +92,13 @@ detect_displays() {
                 echo -e "  ${GREEN}[$count]${NC} $dpy - $name"
             fi
         fi
-    done <<< "$dpys_output"
-    
+    done <<<"$dpys_output"
+
     if [ ${#DISPLAY_IDS[@]} -eq 0 ]; then
         echo -e "${RED}No connected displays found!${NC}"
         exit 1
     fi
-    
+
     echo ""
     echo -e "${GREEN}Found ${#DISPLAY_IDS[@]} connected display(s)${NC}"
     echo ""
@@ -125,11 +125,11 @@ detect_refresh_rates() {
     local dpy="$1"
     local resolution="$2"
     local rates=()
-    
+
     # Query nvidia-settings for available modes
     local mode_output
     mode_output=$(nvidia-settings -q "${dpy}/Modes" 2>/dev/null || true)
-    
+
     # Parse refresh rates for the given resolution
     if [ -n "$mode_output" ]; then
         while IFS= read -r line; do
@@ -139,14 +139,14 @@ detect_refresh_rates() {
                 rate=$(echo "$rate" | sed 's/\.0$//')
                 rates+=("$rate")
             fi
-        done <<< "$mode_output"
+        done <<<"$mode_output"
     fi
-    
+
     # Also try xrandr as a fallback for mode detection
     if [ ${#rates[@]} -eq 0 ] && command -v xrandr &>/dev/null; then
         local xrandr_output
         xrandr_output=$(xrandr 2>/dev/null || true)
-        
+
         # Find the output name associated with this DPY
         # nvidia-settings DPY names map to xrandr outputs
         local in_display=false
@@ -174,9 +174,9 @@ detect_refresh_rates() {
                     done
                 fi
             fi
-        done <<< "$xrandr_output"
+        done <<<"$xrandr_output"
     fi
-    
+
     # Deduplicate and sort descending
     if [ ${#rates[@]} -gt 0 ]; then
         printf '%s\n' "${rates[@]}" | sort -rn -u
@@ -186,7 +186,7 @@ detect_refresh_rates() {
 # Detect the current/preferred refresh rate for a display
 detect_current_refresh_rate() {
     local dpy="$1"
-    
+
     # Try nvidia-settings first
     local refresh
     refresh=$(nvidia-settings -t -q "${dpy}/RefreshRate" 2>/dev/null | head -1)
@@ -198,7 +198,7 @@ detect_current_refresh_rate() {
             return 0
         fi
     fi
-    
+
     # Fallback: try parsing current MetaMode
     local metamode
     metamode=$(nvidia-settings -q CurrentMetaMode 2>/dev/null || true)
@@ -206,7 +206,7 @@ detect_current_refresh_rate() {
         echo "${BASH_REMATCH[1]}"
         return 0
     fi
-    
+
     echo ""
     return 1
 }
@@ -217,64 +217,64 @@ configure_displays() {
     echo -e "${CYAN}                    DISPLAY CONFIGURATION                       ${NC}"
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
     echo ""
-    
+
     local positions=("left" "center" "right" "top" "bottom" "skip")
     local rotations=("normal" "left" "right" "inverted")
-    
+
     for i in "${!DISPLAY_IDS[@]}"; do
         local dpy="${DISPLAY_IDS[$i]}"
         local name="${DISPLAY_NAMES[$i]}"
-        
+
         echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo -e "${YELLOW}Configuring: $dpy ($name)${NC}"
         echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
-        
+
         # Position
         echo "Select position for this display:"
         for p in "${!positions[@]}"; do
-            echo "  [$((p+1))] ${positions[$p]}"
+            echo "  [$((p + 1))] ${positions[$p]}"
         done
         echo ""
         read -p "Position [1-${#positions[@]}]: " pos_choice
-        pos_choice=${pos_choice:-2}  # Default to center
-        DISPLAY_POSITIONS[$i]="${positions[$((pos_choice-1))]}"
-        
+        pos_choice=${pos_choice:-2} # Default to center
+        DISPLAY_POSITIONS[$i]="${positions[$((pos_choice - 1))]}"
+
         if [ "${DISPLAY_POSITIONS[$i]}" = "skip" ]; then
             echo -e "${YELLOW}Skipping $dpy${NC}"
             echo ""
             continue
         fi
-        
+
         # Resolution
         echo ""
         echo "Select resolution:"
         local res_options=($(get_resolutions "$dpy"))
         for r in "${!res_options[@]}"; do
-            echo "  [$((r+1))] ${res_options[$r]}"
+            echo "  [$((r + 1))] ${res_options[$r]}"
         done
         echo ""
         read -p "Resolution [1-${#res_options[@]}] (default: 3 for 1920x1080): " res_choice
         res_choice=${res_choice:-3}
-        
-        if [ "${res_options[$((res_choice-1))]}" = "custom" ]; then
+
+        if [ "${res_options[$((res_choice - 1))]}" = "custom" ]; then
             read -p "Enter custom resolution (e.g., 2560x1080): " custom_res
             DISPLAY_RESOLUTIONS[$i]="$custom_res"
         else
-            DISPLAY_RESOLUTIONS[$i]="${res_options[$((res_choice-1))]}"
+            DISPLAY_RESOLUTIONS[$i]="${res_options[$((res_choice - 1))]}"
         fi
-        
+
         # Rotation
         echo ""
         echo "Select rotation:"
         for r in "${!rotations[@]}"; do
-            echo "  [$((r+1))] ${rotations[$r]}"
+            echo "  [$((r + 1))] ${rotations[$r]}"
         done
         echo ""
         read -p "Rotation [1-${#rotations[@]}] (default: 1 for normal): " rot_choice
         rot_choice=${rot_choice:-1}
-        DISPLAY_ROTATIONS[$i]="${rotations[$((rot_choice-1))]}"
-        
+        DISPLAY_ROTATIONS[$i]="${rotations[$((rot_choice - 1))]}"
+
         # Refresh Rate
         echo ""
         local chosen_res="${DISPLAY_RESOLUTIONS[$i]}"
@@ -283,7 +283,7 @@ configure_displays() {
         detected_rates=$(detect_refresh_rates "$dpy" "$chosen_res")
         local current_rate
         current_rate=$(detect_current_refresh_rate "$dpy")
-        
+
         if [ -n "$detected_rates" ]; then
             echo ""
             echo "Detected refresh rates:"
@@ -297,21 +297,21 @@ configure_displays() {
                 echo -e "  [$rate_idx] ${rate}Hz${marker}"
                 rate_arr+=("$rate")
                 ((rate_idx++))
-            done <<< "$detected_rates"
+            done <<<"$detected_rates"
             echo "  [$rate_idx] Enter custom rate"
-            echo "  [$((rate_idx+1))] Auto (let driver decide)"
+            echo "  [$((rate_idx + 1))] Auto (let driver decide)"
             echo ""
-            read -p "Refresh rate [1-$((rate_idx+1))] (default: 1): " rate_choice
+            read -p "Refresh rate [1-$((rate_idx + 1))] (default: 1): " rate_choice
             rate_choice=${rate_choice:-1}
-            
-            if [ "$rate_choice" = "$((rate_idx+1))" ]; then
+
+            if [ "$rate_choice" = "$((rate_idx + 1))" ]; then
                 DISPLAY_REFRESH_RATES[$i]=""
                 echo -e "${YELLOW}Using auto refresh rate${NC}"
             elif [ "$rate_choice" = "$rate_idx" ]; then
                 read -p "Enter refresh rate (e.g., 165): " custom_rate
                 DISPLAY_REFRESH_RATES[$i]="$custom_rate"
             else
-                DISPLAY_REFRESH_RATES[$i]="${rate_arr[$((rate_choice-1))]}"
+                DISPLAY_REFRESH_RATES[$i]="${rate_arr[$((rate_choice - 1))]}"
             fi
         else
             echo -e "${YELLOW}Could not auto-detect refresh rates.${NC}"
@@ -330,17 +330,17 @@ configure_displays() {
             local common_rates=(60 75 120 144 165 180 240)
             read -p "Refresh rate [1-9] (default: 9): " rate_choice
             rate_choice=${rate_choice:-9}
-            
+
             if [ "$rate_choice" = "9" ]; then
                 DISPLAY_REFRESH_RATES[$i]=""
             elif [ "$rate_choice" = "8" ]; then
                 read -p "Enter refresh rate (e.g., 165): " custom_rate
                 DISPLAY_REFRESH_RATES[$i]="$custom_rate"
             else
-                DISPLAY_REFRESH_RATES[$i]="${common_rates[$((rate_choice-1))]}"
+                DISPLAY_REFRESH_RATES[$i]="${common_rates[$((rate_choice - 1))]}"
             fi
         fi
-        
+
         # ForceFullCompositionPipeline
         echo ""
         echo -e "${YELLOW}ForceFullCompositionPipeline${NC} eliminates stuttering on mixed"
@@ -352,7 +352,7 @@ configure_displays() {
         else
             DISPLAY_COMPOSITION_PIPELINE[$i]="On"
         fi
-        
+
         # G-Sync Compatible
         echo ""
         echo -e "${YELLOW}AllowGSYNCCompatible${NC} enables variable refresh rate (VRR)"
@@ -365,7 +365,7 @@ configure_displays() {
         else
             DISPLAY_GSYNC_COMPATIBLE[$i]="On"
         fi
-        
+
         local rate_str=""
         if [ -n "${DISPLAY_REFRESH_RATES[$i]}" ]; then
             rate_str=" @ ${DISPLAY_REFRESH_RATES[$i]}Hz"
@@ -390,33 +390,33 @@ configure_capture() {
     echo -e "${CYAN}                  CAPTURE CARD CONFIGURATION                    ${NC}"
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
     echo ""
-    
+
     read -p "Do you have an HDMI capture card? [y/N]: " has_capture
-    
+
     if [[ "$has_capture" =~ ^[Yy] ]]; then
         CAPTURE_ENABLED=true
-        
+
         echo ""
         echo "Select which display is your capture card:"
         for i in "${!DISPLAY_IDS[@]}"; do
-            echo "  [$((i+1))] ${DISPLAY_IDS[$i]} - ${DISPLAY_NAMES[$i]}"
+            echo "  [$((i + 1))] ${DISPLAY_IDS[$i]} - ${DISPLAY_NAMES[$i]}"
         done
         echo ""
         read -p "Capture card display: " cap_choice
-        CAPTURE_DISPLAY="${DISPLAY_IDS[$((cap_choice-1))]}"
-        CAPTURE_DISPLAY_NAME="${DISPLAY_NAMES[$((cap_choice-1))]}"
-        
+        CAPTURE_DISPLAY="${DISPLAY_IDS[$((cap_choice - 1))]}"
+        CAPTURE_DISPLAY_NAME="${DISPLAY_NAMES[$((cap_choice - 1))]}"
+
         echo ""
         echo "Select which display the capture card should mirror:"
         for i in "${!DISPLAY_IDS[@]}"; do
             if [ "${DISPLAY_IDS[$i]}" != "$CAPTURE_DISPLAY" ] && [ "${DISPLAY_POSITIONS[$i]}" != "skip" ]; then
-                echo "  [$((i+1))] ${DISPLAY_IDS[$i]} - ${DISPLAY_NAMES[$i]}"
+                echo "  [$((i + 1))] ${DISPLAY_IDS[$i]} - ${DISPLAY_NAMES[$i]}"
             fi
         done
         echo ""
         read -p "Mirror target display: " mirror_choice
-        CAPTURE_MIRROR_TARGET="${DISPLAY_IDS[$((mirror_choice-1))]}"
-        
+        CAPTURE_MIRROR_TARGET="${DISPLAY_IDS[$((mirror_choice - 1))]}"
+
         # Detect available refresh rates for the capture card at the mirror resolution
         local mirror_res=""
         for i in "${!DISPLAY_IDS[@]}"; do
@@ -425,13 +425,13 @@ configure_capture() {
                 break
             fi
         done
-        
+
         echo ""
         echo -e "${BLUE}Detecting capture card refresh rates at ${mirror_res}...${NC}"
         local cap_rates=()
         local cap_output
         cap_output=$(xrandr 2>/dev/null | sed -n "/^${CAPTURE_DISPLAY_NAME} connected/,/^[A-Z]/p" | head -20)
-        
+
         if [ -n "$cap_output" ] && [ -n "$mirror_res" ]; then
             local rate_line
             rate_line=$(echo "$cap_output" | grep "^[[:space:]]*${mirror_res}" | head -1)
@@ -442,12 +442,12 @@ configure_capture() {
                 done
             fi
         fi
-        
+
         # Deduplicate and sort descending
         if [ ${#cap_rates[@]} -gt 0 ]; then
             mapfile -t cap_rates < <(printf '%s\n' "${cap_rates[@]}" | sort -rn -u)
         fi
-        
+
         if [ ${#cap_rates[@]} -gt 0 ]; then
             echo ""
             echo -e "${YELLOW}Capture card refresh rate${NC}"
@@ -463,7 +463,7 @@ configure_capture() {
             done
             echo "  [$rate_idx] Enter custom rate"
             echo ""
-            
+
             # Find index of 100Hz for default
             local default_idx=1
             for ri in "${!cap_rates[@]}"; do
@@ -472,15 +472,15 @@ configure_capture() {
                     break
                 fi
             done
-            
-            read -p "Capture refresh rate [1-${rate_idx}] (default: $default_idx for ${cap_rates[$((default_idx-1))]}Hz): " cap_rate_choice
+
+            read -p "Capture refresh rate [1-${rate_idx}] (default: $default_idx for ${cap_rates[$((default_idx - 1))]}Hz): " cap_rate_choice
             cap_rate_choice=${cap_rate_choice:-$default_idx}
-            
+
             if [ "$cap_rate_choice" = "$rate_idx" ]; then
                 read -p "Enter refresh rate (e.g., 120): " custom_cap_rate
                 CAPTURE_REFRESH_RATE="$custom_cap_rate"
             else
-                CAPTURE_REFRESH_RATE="${cap_rates[$((cap_rate_choice-1))]}"
+                CAPTURE_REFRESH_RATE="${cap_rates[$((cap_rate_choice - 1))]}"
             fi
         else
             echo ""
@@ -496,15 +496,15 @@ configure_capture() {
             local fallback_rates=(60 100 120 144 240)
             read -p "Capture refresh rate [1-6] (default: 2 for 100Hz): " cap_rate_choice
             cap_rate_choice=${cap_rate_choice:-2}
-            
+
             if [ "$cap_rate_choice" = "6" ]; then
                 read -p "Enter refresh rate (e.g., 120): " custom_cap_rate
                 CAPTURE_REFRESH_RATE="$custom_cap_rate"
             else
-                CAPTURE_REFRESH_RATE="${fallback_rates[$((cap_rate_choice-1))]}"
+                CAPTURE_REFRESH_RATE="${fallback_rates[$((cap_rate_choice - 1))]}"
             fi
         fi
-        
+
         echo ""
         echo -e "${GREEN}✓ Capture card: $CAPTURE_DISPLAY mirrors $CAPTURE_MIRROR_TARGET @ ${CAPTURE_REFRESH_RATE}Hz${NC}"
     else
@@ -518,57 +518,57 @@ calculate_offsets() {
     # Sort displays by position and calculate X,Y offsets
     local x_offset=0
     local max_height=0
-    
+
     # First pass: find max height for vertical centering
     for i in "${!DISPLAY_IDS[@]}"; do
         if [ "${DISPLAY_POSITIONS[$i]}" = "skip" ]; then
             continue
         fi
-        
+
         local res="${DISPLAY_RESOLUTIONS[$i]}"
         local rot="${DISPLAY_ROTATIONS[$i]}"
         local width="${res%x*}"
         local height="${res#*x}"
-        
+
         # Swap for rotation
         if [ "$rot" = "left" ] || [ "$rot" = "right" ]; then
             local tmp=$width
             width=$height
             height=$tmp
         fi
-        
+
         if [ "$height" -gt "$max_height" ]; then
             max_height=$height
         fi
     done
-    
+
     # Process left displays first, then center, then right
     local positions_order=("left" "center" "right")
     x_offset=0
-    
+
     for pos in "${positions_order[@]}"; do
         for i in "${!DISPLAY_IDS[@]}"; do
             if [ "${DISPLAY_POSITIONS[$i]}" != "$pos" ]; then
                 continue
             fi
-            
+
             local res="${DISPLAY_RESOLUTIONS[$i]}"
             local rot="${DISPLAY_ROTATIONS[$i]}"
             local width="${res%x*}"
             local height="${res#*x}"
-            
+
             # Swap for rotation
             if [ "$rot" = "left" ] || [ "$rot" = "right" ]; then
                 local tmp=$width
                 width=$height
                 height=$tmp
             fi
-            
+
             # Calculate Y offset for vertical centering
-            local y_offset=$(( (max_height - height) / 2 ))
-            
+            local y_offset=$(((max_height - height) / 2))
+
             DISPLAY_OFFSETS[$i]="+${x_offset}+${y_offset}"
-            
+
             x_offset=$((x_offset + width))
         done
     done
@@ -579,7 +579,7 @@ generate_metamode() {
     local include_capture="$1"
     local metamode=""
     local first=true
-    
+
     for i in "${!DISPLAY_IDS[@]}"; do
         local dpy="${DISPLAY_IDS[$i]}"
         local pos="${DISPLAY_POSITIONS[$i]}"
@@ -588,35 +588,35 @@ generate_metamode() {
         local offset="${DISPLAY_OFFSETS[$i]}"
         local refresh="${DISPLAY_REFRESH_RATES[$i]}"
         local ffcp="${DISPLAY_COMPOSITION_PIPELINE[$i]}"
-        
+
         # Skip if position is skip
         if [ "$pos" = "skip" ]; then
             continue
         fi
-        
+
         # Skip capture card in base mode
         if [ "$dpy" = "$CAPTURE_DISPLAY" ] && [ "$include_capture" = "false" ]; then
             continue
         fi
-        
+
         if [ "$first" = true ]; then
             first=false
         else
             metamode+=", \\"$'\n'
         fi
-        
+
         # Build resolution string with refresh rate
         local res_str="$res"
         if [ -n "$refresh" ]; then
             res_str="${res}_${refresh}"
         fi
-        
+
         # Build display config
         local config="$dpy: $res_str $offset"
-        
+
         # Build options block
         local options=()
-        
+
         # Add rotation if not normal
         if [ "$rot" != "normal" ]; then
             local rot_value
@@ -627,28 +627,31 @@ generate_metamode() {
             esac
             options+=("Rotation=$rot_value")
         fi
-        
+
         # Add ForceFullCompositionPipeline if enabled (not for capture card)
         if [ "$ffcp" = "On" ] && [ "$dpy" != "$CAPTURE_DISPLAY" ]; then
             options+=("ForceFullCompositionPipeline=On")
         fi
-        
+
         # Add AllowGSYNCCompatible if enabled (not for capture card)
         local gsync="${DISPLAY_GSYNC_COMPATIBLE[$i]}"
         if [ "$gsync" = "On" ] && [ "$dpy" != "$CAPTURE_DISPLAY" ]; then
             options+=("AllowGSYNCCompatible=On")
         fi
-        
+
         # Append options block if any
         if [ ${#options[@]} -gt 0 ]; then
             local opts_str
-            opts_str=$(IFS=', '; echo "${options[*]}")
+            opts_str=$(
+                IFS=', '
+                echo "${options[*]}"
+            )
             config+=" {$opts_str}"
         fi
-        
+
         metamode+="$config"
     done
-    
+
     # Add capture card mirroring if enabled
     if [ "$include_capture" = "true" ] && [ "$CAPTURE_ENABLED" = true ]; then
         # Find the mirror target's resolution and offset
@@ -657,11 +660,11 @@ generate_metamode() {
                 local mirror_res="${DISPLAY_RESOLUTIONS[$i]}"
                 local mirror_offset="${DISPLAY_OFFSETS[$i]}"
                 metamode+=", \\"$'\n'
-                
+
                 # Detect capture card's supported resolutions
                 local capture_modes
                 capture_modes=$(xrandr 2>/dev/null | grep -A1 "^${CAPTURE_DISPLAY_NAME} connected" | tail -1 | grep -oP '\d+x\d+' | head -1)
-                
+
                 # Check if capture card supports the mirror resolution natively
                 local capture_supports_res=false
                 if [ -n "$capture_modes" ]; then
@@ -671,7 +674,7 @@ generate_metamode() {
                         capture_supports_res=true
                     fi
                 fi
-                
+
                 if [ "$capture_supports_res" = true ]; then
                     # Capture card supports the resolution natively
                     local cap_res_str="$mirror_res"
@@ -690,7 +693,7 @@ generate_metamode() {
                         fi
                     done
                     fallback_res="${fallback_res:-1920x1080}"
-                    
+
                     if [ "$fallback_res" != "$mirror_res" ]; then
                         # Use ViewPortIn/ViewPortOut to scale
                         metamode+="$CAPTURE_DISPLAY: $fallback_res $mirror_offset {ViewPortIn=$mirror_res, ViewPortOut=${fallback_res}+0+0}"
@@ -702,7 +705,7 @@ generate_metamode() {
             fi
         done
     fi
-    
+
     echo "$metamode"
 }
 
@@ -721,20 +724,20 @@ generate_scripts() {
     echo -e "${CYAN}                    GENERATING SCRIPTS                          ${NC}"
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
     echo ""
-    
+
     # Calculate offsets
     calculate_offsets
-    
+
     # Create directories
     mkdir -p "$SCREENLAYOUT_DIR"
     mkdir -p "$SYSTEMD_DIR"
-    
+
     local display_num=$(get_display_number)
-    
+
     # Generate nvidia-base.sh
     echo -e "${BLUE}Generating nvidia-base.sh...${NC}"
     local base_metamode=$(generate_metamode "false")
-    
+
     # Build display info comments
     local display_comments=""
     for i in "${!DISPLAY_IDS[@]}"; do
@@ -750,8 +753,8 @@ generate_scripts() {
             display_comments+="# ${DISPLAY_POSITIONS[$i]^}: ${DISPLAY_IDS[$i]} (${DISPLAY_NAMES[$i]}) ${DISPLAY_RESOLUTIONS[$i]}${rate_info}${ffcp_info}\n"
         fi
     done
-    
-    cat > "$SCREENLAYOUT_DIR/nvidia-base.sh" << EOF
+
+    cat >"$SCREENLAYOUT_DIR/nvidia-base.sh" <<EOF
 #!/bin/bash
 # NVIDIA MetaMode base layout
 # Generated by setup-wizard.sh on $(date)
@@ -767,13 +770,13 @@ $base_metamode"
 EOF
     chmod +x "$SCREENLAYOUT_DIR/nvidia-base.sh"
     echo -e "${GREEN}✓ Created $SCREENLAYOUT_DIR/nvidia-base.sh${NC}"
-    
+
     # Generate nvidia-capture.sh if capture is enabled
     if [ "$CAPTURE_ENABLED" = true ]; then
         echo -e "${BLUE}Generating nvidia-capture.sh...${NC}"
         local capture_metamode=$(generate_metamode "true")
-        
-        cat > "$SCREENLAYOUT_DIR/nvidia-capture.sh" << EOF
+
+        cat >"$SCREENLAYOUT_DIR/nvidia-capture.sh" <<EOF
 #!/bin/bash
 # NVIDIA MetaMode with capture card enabled
 # Generated by setup-wizard.sh on $(date)#
@@ -793,10 +796,10 @@ EOF
         chmod +x "$SCREENLAYOUT_DIR/nvidia-capture.sh"
         echo -e "${GREEN}✓ Created $SCREENLAYOUT_DIR/nvidia-capture.sh${NC}"
     fi
-    
+
     # Generate apply-layout.sh
     echo -e "${BLUE}Generating apply-layout.sh...${NC}"
-    
+
     if [ "$CAPTURE_ENABLED" = true ]; then
         # Get the capture card's display name for detection
         local capture_name=""
@@ -806,13 +809,13 @@ EOF
                 break
             fi
         done
-        
+
         # Determine NVIDIA audio card for HDMI handshake fix
         local nvidia_audio_card
         nvidia_audio_card=$(pactl list short cards 2>/dev/null | grep -i "pci.*nvidia\|nvidia.*pci\|pci.*hdmi" | head -1 | awk '{print $2}')
         nvidia_audio_card="${nvidia_audio_card:-alsa_card.pci-0000_08_00.1}"
-        
-        cat > "$SCREENLAYOUT_DIR/apply-layout.sh" << EOF
+
+        cat >"$SCREENLAYOUT_DIR/apply-layout.sh" <<EOF
 #!/bin/bash
 # Apply correct NVIDIA MetaMode depending on capture card presence
 # Optionally resets PipeWire combined audio sink when capture card is detected
@@ -861,7 +864,7 @@ else
 fi
 EOF
     else
-        cat > "$SCREENLAYOUT_DIR/apply-layout.sh" << EOF
+        cat >"$SCREENLAYOUT_DIR/apply-layout.sh" <<EOF
 #!/bin/bash
 # Apply NVIDIA MetaMode layout
 # Generated by setup-wizard.sh on $(date)
@@ -874,10 +877,10 @@ EOF
     fi
     chmod +x "$SCREENLAYOUT_DIR/apply-layout.sh"
     echo -e "${GREEN}✓ Created $SCREENLAYOUT_DIR/apply-layout.sh${NC}"
-    
+
     # Generate systemd service (login apply)
     echo -e "${BLUE}Generating systemd services...${NC}"
-    cat > "$SYSTEMD_DIR/$SERVICE_NAME" << 'SVCEOF'
+    cat >"$SYSTEMD_DIR/$SERVICE_NAME" <<'SVCEOF'
 [Unit]
 Description=Apply NVIDIA display layout after login
 After=graphical-session.target
@@ -891,10 +894,10 @@ ExecStart=%h/.screenlayout/apply-layout.sh
 WantedBy=default.target
 SVCEOF
     echo -e "${GREEN}✓ Created $SYSTEMD_DIR/$SERVICE_NAME${NC}"
-    
+
     # Generate display monitor service (hotplug detection)
     local MONITOR_SERVICE="nvidia-display-monitor.service"
-    cat > "$SYSTEMD_DIR/$MONITOR_SERVICE" << 'SVCEOF'
+    cat >"$SYSTEMD_DIR/$MONITOR_SERVICE" <<'SVCEOF'
 [Unit]
 Description=NVIDIA Display Monitor - Auto-apply layout on display changes
 After=graphical-session.target
@@ -909,37 +912,37 @@ RestartSec=5
 WantedBy=default.target
 SVCEOF
     echo -e "${GREEN}✓ Created $SYSTEMD_DIR/$MONITOR_SERVICE${NC}"
-    
+
     echo ""
 }
 
 # Save configuration for future reference
 save_config() {
     local config_file="$SCREENLAYOUT_DIR/.layout-config"
-    
-    echo "# Layout configuration - generated $(date)" > "$config_file"
-    echo "# Run setup-wizard.sh again to reconfigure" >> "$config_file"
-    echo "" >> "$config_file"
-    
+
+    echo "# Layout configuration - generated $(date)" >"$config_file"
+    echo "# Run setup-wizard.sh again to reconfigure" >>"$config_file"
+    echo "" >>"$config_file"
+
     for i in "${!DISPLAY_IDS[@]}"; do
-        echo "DISPLAY_${i}_ID=${DISPLAY_IDS[$i]}" >> "$config_file"
-        echo "DISPLAY_${i}_NAME=${DISPLAY_NAMES[$i]}" >> "$config_file"
-        echo "DISPLAY_${i}_RES=${DISPLAY_RESOLUTIONS[$i]}" >> "$config_file"
-        echo "DISPLAY_${i}_REFRESH=${DISPLAY_REFRESH_RATES[$i]}" >> "$config_file"
-        echo "DISPLAY_${i}_POS=${DISPLAY_POSITIONS[$i]}" >> "$config_file"
-        echo "DISPLAY_${i}_ROT=${DISPLAY_ROTATIONS[$i]}" >> "$config_file"
-        echo "DISPLAY_${i}_FFCP=${DISPLAY_COMPOSITION_PIPELINE[$i]}" >> "$config_file"
-        echo "DISPLAY_${i}_GSYNC=${DISPLAY_GSYNC_COMPATIBLE[$i]}" >> "$config_file"
-        echo "" >> "$config_file"
+        echo "DISPLAY_${i}_ID=${DISPLAY_IDS[$i]}" >>"$config_file"
+        echo "DISPLAY_${i}_NAME=${DISPLAY_NAMES[$i]}" >>"$config_file"
+        echo "DISPLAY_${i}_RES=${DISPLAY_RESOLUTIONS[$i]}" >>"$config_file"
+        echo "DISPLAY_${i}_REFRESH=${DISPLAY_REFRESH_RATES[$i]}" >>"$config_file"
+        echo "DISPLAY_${i}_POS=${DISPLAY_POSITIONS[$i]}" >>"$config_file"
+        echo "DISPLAY_${i}_ROT=${DISPLAY_ROTATIONS[$i]}" >>"$config_file"
+        echo "DISPLAY_${i}_FFCP=${DISPLAY_COMPOSITION_PIPELINE[$i]}" >>"$config_file"
+        echo "DISPLAY_${i}_GSYNC=${DISPLAY_GSYNC_COMPATIBLE[$i]}" >>"$config_file"
+        echo "" >>"$config_file"
     done
-    
+
     if [ "$CAPTURE_ENABLED" = true ]; then
-        echo "CAPTURE_ENABLED=true" >> "$config_file"
-        echo "CAPTURE_DISPLAY=$CAPTURE_DISPLAY" >> "$config_file"
-        echo "CAPTURE_MIRROR=$CAPTURE_MIRROR_TARGET" >> "$config_file"
-        echo "CAPTURE_REFRESH=$CAPTURE_REFRESH_RATE" >> "$config_file"
+        echo "CAPTURE_ENABLED=true" >>"$config_file"
+        echo "CAPTURE_DISPLAY=$CAPTURE_DISPLAY" >>"$config_file"
+        echo "CAPTURE_MIRROR=$CAPTURE_MIRROR_TARGET" >>"$config_file"
+        echo "CAPTURE_REFRESH=$CAPTURE_REFRESH_RATE" >>"$config_file"
     fi
-    
+
     echo -e "${GREEN}✓ Configuration saved to $config_file${NC}"
 }
 
@@ -949,7 +952,7 @@ finalize() {
     echo -e "${CYAN}                         SUMMARY                                ${NC}"
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
     echo ""
-    
+
     echo -e "${GREEN}Generated files:${NC}"
     echo "  • $SCREENLAYOUT_DIR/nvidia-base.sh"
     if [ "$CAPTURE_ENABLED" = true ]; then
@@ -959,7 +962,7 @@ finalize() {
     echo "  • $SYSTEMD_DIR/$SERVICE_NAME"
     echo "  • $SYSTEMD_DIR/nvidia-display-monitor.service"
     echo ""
-    
+
     echo -e "${YELLOW}Display layout:${NC}"
     for i in "${!DISPLAY_IDS[@]}"; do
         if [ "${DISPLAY_POSITIONS[$i]}" != "skip" ]; then
@@ -979,13 +982,13 @@ finalize() {
         fi
     done
     echo ""
-    
+
     if [ "$CAPTURE_ENABLED" = true ]; then
         echo -e "${YELLOW}Capture card:${NC}"
         echo "  • $CAPTURE_DISPLAY mirrors $CAPTURE_MIRROR_TARGET @ ${CAPTURE_REFRESH_RATE}Hz"
         echo ""
     fi
-    
+
     read -p "Enable systemd services for auto-apply on login and hotplug? [Y/n]: " enable_service
     if [[ ! "$enable_service" =~ ^[Nn] ]]; then
         # Also install the display monitor script
@@ -997,21 +1000,21 @@ finalize() {
         elif [ -f "$SCREENLAYOUT_DIR/display-monitor.sh" ]; then
             echo -e "${GREEN}✓ display-monitor.sh already installed${NC}"
         fi
-        
+
         systemctl --user daemon-reload
         systemctl --user enable "$SERVICE_NAME"
         systemctl --user enable "nvidia-display-monitor.service"
         echo -e "${GREEN}✓ Login layout service enabled${NC}"
         echo -e "${GREEN}✓ Display monitor service enabled (detects hotplug)${NC}"
     fi
-    
+
     echo ""
     read -p "Apply layout now? [Y/n]: " apply_now
     if [[ ! "$apply_now" =~ ^[Nn] ]]; then
         "$SCREENLAYOUT_DIR/apply-layout.sh"
         echo -e "${GREEN}✓ Layout applied${NC}"
     fi
-    
+
     # Offer PipeWire combined audio sink integration if capture card is enabled
     if [ "$CAPTURE_ENABLED" = true ]; then
         echo ""
@@ -1026,7 +1029,7 @@ finalize() {
         echo "This requires the PipeWire Combined Sink project."
         echo "  https://github.com/ChiefGyk3D/pipewire_sink"
         echo ""
-        
+
         if [ -x "$HOME/.local/bin/pipewire-ensure-defaults" ]; then
             echo -e "${GREEN}✓ pipewire-ensure-defaults is installed at ~/.local/bin/pipewire-ensure-defaults${NC}"
             echo "  Audio integration is enabled automatically — no action needed."
@@ -1048,7 +1051,7 @@ finalize() {
                     echo ""
                     (cd "$pipewire_tmp" && ./install.sh)
                     rm -rf "$pipewire_tmp"
-                    
+
                     if [ -x "$HOME/.local/bin/pipewire-ensure-defaults" ]; then
                         echo ""
                         echo -e "${GREEN}✓ PipeWire integration is now active${NC}"
@@ -1069,7 +1072,7 @@ finalize() {
         echo "To disable audio integration, edit ~/.screenlayout/apply-layout.sh and set:"
         echo "  PIPEWIRE_ENSURE_DEFAULTS=\"none\""
     fi
-    
+
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
     echo -e "${GREEN}                    SETUP COMPLETE!                            ${NC}"

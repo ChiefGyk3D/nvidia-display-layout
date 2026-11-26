@@ -89,19 +89,19 @@ if [ "${1:-}" = "--status" ]; then
     echo -e "${CYAN}═══ Current MetaMode ═══${NC}"
     nvidia-settings -q CurrentMetaMode 2>/dev/null | grep -A1 "Attribute" | tail -1 | sed 's/^[[:space:]]*/  /'
     echo ""
-    
+
     if [ -x "$SCREENLAYOUT_DIR/apply-layout.sh" ]; then
         echo -e "${GREEN}●${NC} Saved layout: $SCREENLAYOUT_DIR/apply-layout.sh"
     else
         echo -e "${YELLOW}○${NC} No saved layout found. Run: $0 --setup"
     fi
-    
+
     if systemctl --user is-active apply-display-layout.service &>/dev/null; then
         echo -e "${GREEN}●${NC} Login layout service: active"
     else
         echo -e "${YELLOW}○${NC} Login layout service: inactive"
     fi
-    
+
     if systemctl --user is-active nvidia-display-monitor.service &>/dev/null; then
         echo -e "${GREEN}●${NC} Display monitor: running"
     else
@@ -138,13 +138,13 @@ while IFS=',' read -ra ENTRIES; do
     for entry in "${ENTRIES[@]}"; do
         entry=$(echo "$entry" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
         [ -z "$entry" ] && continue
-        
+
         if [ "$FIRST" = true ]; then
             FIRST=false
         else
             NEW_META+=", "
         fi
-        
+
         # Check if this entry already has ForceFullCompositionPipeline
         if echo "$entry" | grep -q "ForceFullCompositionPipeline"; then
             NEW_META+="$entry"
@@ -156,7 +156,7 @@ while IFS=',' read -ra ENTRIES; do
             NEW_META+="$entry {ForceFullCompositionPipeline=On}"
         fi
     done
-done <<< "$CURRENT_META"
+done <<<"$CURRENT_META"
 
 if [ -n "$NEW_META" ]; then
     nvidia-settings --assign "CurrentMetaMode=$NEW_META" 2>/dev/null
